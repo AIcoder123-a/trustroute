@@ -55,7 +55,8 @@ export interface PolicyInput {
 }
 
 function stageFailureReason(label: string, stage: { status: string; error: { message: string } | null }): PolicyReason {
-  const message = stage.error?.message ?? 'no result';
+  const raw = stage.error?.message ?? 'no result';
+  const message = raw.replace(/\s*\.\s*$/, '');
   return {
     code: 'detection_incomplete',
     label: `${label} did not complete`,
