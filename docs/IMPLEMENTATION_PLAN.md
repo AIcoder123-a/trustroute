@@ -111,8 +111,8 @@ reviewer sees the masked copy rather than raw data.
 
 | # | Blocker | Impact if unresolved |
 | --- | --- | --- |
-| 1 | `CLOCKED_API_KEY` | **No live integration evidence.** The Protect/Guard/Inspect award is judged largely on real integration; mock-only would be a serious weakness. |
-| 2 | Clocked account + `CLOCKEDHACKATHON` credits | same as above |
+| 1 | A network path that reaches the Clocked API | A key is present in `.env.local`, but every request from this network is stopped by an HTML interstitial (`403`) at the edge. **No live integration evidence yet.** |
+| 2 | Clocked account + `CLOCKEDHACKATHON` credits | not yet confirmed; the credit balance is unknown until a request actually reaches the API |
 | 3 | Public GitHub repo (needs explicit authorization to push) | entry requirement |
 | 4 | Public demo deployment (needs authorization) | entry requirement |
 | 5 | Age + Wise payout eligibility confirmation | eligibility / prize |

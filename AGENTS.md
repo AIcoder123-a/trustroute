@@ -95,9 +95,9 @@ Playwright downloads browsers once: `npx playwright install chromium`.
 | Area | State |
 | --- | --- |
 | Build, typecheck, lint | clean |
-| Unit/integration tests | 55 passing |
+| Unit/integration tests | 61 passing |
 | Browser tests | 16 passing (8 tests × desktop + mobile) |
-| Live Clocked calls | **none yet** — no `CLOCKED_API_KEY` in the environment |
+| Live Clocked calls | attempted; **all blocked by an HTML interstitial (403) at the service edge** before authentication. No successful detection recorded. |
 | Deployment | not deployed |
 | Git remote | none; local commits only |
 

@@ -53,6 +53,34 @@ export interface StageCall<T> {
   attempts: number;
 }
 
+/** True when the "error" we got back is an HTML interstitial, not an API answer. */
+function looksLikeHtml(raw: string): boolean {
+  return /<\s*(!doctype|html|head|title|meta)/i.test(raw.slice(0, 400));
+}
+
+function tidy(raw: string): string {
+  const stripped = raw
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (stripped.length === 0) return 'The API returned an empty error message.';
+  return stripped.length > 240 ? `${stripped.slice(0, 237)}…` : stripped;
+}
+
+/**
+ * A 403 served as an HTML page is almost never a rejected key — it is a bot or
+ * network interstitial in front of the API. Reporting it as "your key is wrong"
+ * would send an operator down the wrong path, so it gets its own code.
+ */
+function edgeInterstitial(status: number | null, raw: string): StageError {
+  return {
+    code: 'edge_interstitial',
+    message: `The request was answered with an HTML page instead of a JSON result (HTTP ${status ?? 'n/a'}). That is normally bot or network protection in front of the API rather than a credential problem, so retrying from the same network will not help. Verify the key from another network or from the provider's playground.`,
+    retryable: false,
+    httpStatus: status,
+  };
+}
+
 export function classifyError(error: unknown): { status: StageStatus; error: StageError } {
   if (error instanceof RequestTimeoutError) {
     return {
@@ -70,31 +98,35 @@ export function classifyError(error: unknown): { status: StageStatus; error: Sta
       status: 'error',
       error: {
         code: 'connection',
-        message: 'No response arrived from Clocked (network or TLS failure). Retry with the same idempotency key.',
+        message: 'No response arrived from Clocked (DNS, TLS or an intermediary dropped the connection). The outcome is unknown, and nothing was screened.',
         retryable: true,
         httpStatus: error.status,
       },
     };
   }
-  if (error instanceof AuthenticationError) {
-    return {
-      status: 'unauthorized',
-      error: {
-        code: 'unauthorized',
-        message: 'Clocked rejected the API key. Check CLOCKED_API_KEY and whether the key was revoked.',
-        retryable: false,
-        httpStatus: 401,
-      },
-    };
-  }
-  if (error instanceof PermissionDeniedError) {
+  if (error instanceof AuthenticationError || error instanceof PermissionDeniedError) {
+    const raw = typeof error.error === 'string' ? error.error : '';
+    if (looksLikeHtml(raw)) {
+      return { status: 'error', error: edgeInterstitial(error.status, raw) };
+    }
+    if (error instanceof AuthenticationError) {
+      return {
+        status: 'unauthorized',
+        error: {
+          code: 'unauthorized',
+          message: 'Clocked rejected the API key. Check CLOCKED_API_KEY and whether the key was revoked.',
+          retryable: false,
+          httpStatus: error.status ?? 401,
+        },
+      };
+    }
     return {
       status: 'unauthorized',
       error: {
         code: 'forbidden',
         message: 'The account is not permitted to use this endpoint. Check the plan and endpoint access.',
         retryable: false,
-        httpStatus: 403,
+        httpStatus: error.status ?? 403,
       },
     };
   }
@@ -132,11 +164,15 @@ export function classifyError(error: unknown): { status: StageStatus; error: Sta
     };
   }
   if (error instanceof ClockedError) {
+    const raw = typeof error.error === 'string' ? error.error : '';
+    if (looksLikeHtml(raw)) {
+      return { status: 'error', error: edgeInterstitial(error.status, raw) };
+    }
     return {
       status: 'error',
       error: {
         code: 'clocked_error',
-        message: error.error || 'Clocked returned an error.',
+        message: raw ? tidy(raw) : 'Clocked returned an error.',
         retryable: error.status !== null && error.status >= 500,
         httpStatus: error.status,
       },

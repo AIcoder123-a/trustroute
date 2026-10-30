@@ -26,8 +26,8 @@ vitest 5.0.5, re-verified with the full suite.
 ### 2.1 Unit and integration (vitest)
 
 ```
-Test Files  7 passed (7)
-     Tests  55 passed (55)
+Test Files  8 passed (8)
+     Tests  61 passed (61)
 ```
 
 | File | Assertions | Covers |
@@ -39,6 +39,7 @@ Test Files  7 passed (7)
 | `tests/highlight.test.ts` | 5 | segments reconstruct the input exactly, priority on overlap, out-of-range spans ignored |
 | `tests/validate.test.ts` | 10 | empty/whitespace, null bytes, unknown content type, prose vs script limits, policy length cap, non-object body |
 | `tests/ratelimit.test.ts` | 3 | limit enforcement, per-caller buckets, window refill |
+| `tests/error-classification.test.ts` | 6 | an HTML interstitial is never reported as a rejected key; genuine 401/403, timeout, connection failure and unknown errors each map to the right stage status; HTML never reaches the UI |
 
 The two invariants that matter most, both enforced by tests:
 
@@ -78,36 +79,49 @@ Required coverage from the brief, with the actual evidence for each row.
 | 6 | Suspicious script | REVIEW | REVIEW (malicious 70.8%, suspicious 82.8%, verdict `suspicious`) | `pipeline.test.ts` → `review-script`; screenshots |
 | 7 | Empty input | 400 + client-side block | 400 `invalid_input`; button disabled in the UI | curl below; browser scenario 8 |
 | 8 | Over-length input | 400 with the limit named | 400 `Content is 17,000 characters; the limit for support_ticket is 16,000.` | curl below |
-| 9 | API error (authorization) | REVIEW, never PASS | real 403 from Clocked → both stages `unauthorized`, `policy.degraded = true`, decision REVIEW | §4 |
+| 9 | API unreachable / blocked | REVIEW, never PASS | real 403 with an HTML interstitial from the edge → stage `error` (`edge_interstitial`), `policy.degraded = true`, decision REVIEW | §4 |
 | 10 | Rate limit | 429 + `Retry-After` | 17th request in the window returned 429 | §5 |
 | 11 | Timeout | REVIEW | REVIEW — asserted at the policy layer with `status: 'timeout'`; **not** reproduced against a live timeout | `policy.test.ts` |
 | 12 | Credits exhausted (402) | REVIEW | REVIEW — policy layer only; not reproduced live | `policy.test.ts` |
 | 13 | Malformed response | REVIEW | REVIEW — `normalize*` returns `null`, stage becomes `invalid` | `policy.test.ts` (`invalid` path) |
 
-## 4. Real network exchange with the Clocked API (error path)
+## 4. Real network exchange with the Clocked API
 
-`CLOCKED_MODE=live` with a deliberately invalid key, one screen of a 56-character ticket:
+Three real requests were made on 2026-10-30 with the key present in `.env.local`
+(`node --env-file=.env.local scripts/live-smoke.mjs`). **All three were blocked by an HTML interstitial
+before authentication**, so this run proves the transport and the failure handling, not the integration.
+
+| Endpoint | SDK error class | HTTP | Attempts | Body |
+| --- | --- | --- | --- | --- |
+| `POST /injection` | `PermissionDeniedError` | 403 | 2 | `<html>…Just a moment…</html>` |
+| `POST /pii` | `PermissionDeniedError` | 403 | 1 | `<html>…Just a moment…</html>` |
+| `POST /script` | `ConnectionError` | — | 2 | `fetch failed` |
+
+In the running application the same shape produces:
 
 ```jsonc
 {
   "mode": "live",
   "stages": {
-    "guard":   { "status": "unauthorized", "latencyMs": 798, "attempts": 1,
-                 "error": { "code": "forbidden", "httpStatus": 403, "retryable": false } },
-    "protect": { "status": "unauthorized", "latencyMs": 797, "attempts": 1,
-                 "error": { "code": "forbidden", "httpStatus": 403, "retryable": false } },
+    "guard":  { "status": "error", "error": { "code": "edge_interstitial", "retryable": false } },
+    "protect": { "status": "error", "error": { "code": "edge_interstitial", "retryable": false } },
     "inspect": { "status": "skipped" }
   },
   "policy": { "decision": "REVIEW", "degraded": true }
 }
 ```
 
-What this proves: the request leaves the server over HTTPS and reaches Clocked; the SDK's error classes
-map to TrustRoute stage statuses; an unusable credential degrades the run to REVIEW instead of passing it;
-and no retry storm occurs (`retryable: false`, `attempts: 1`).
+What this proves: the request leaves the server over HTTPS and reaches the service edge; the SDK's error
+classes map onto TrustRoute stage statuses; an unusable channel degrades the run to REVIEW rather than
+passing it; the retry budget is respected (≤ 2 attempts).
 
-What it does **not** prove: any successful detection. That needs a valid key —
-see `docs/API_INTEGRATION.md` §6.2 for the exact procedure and what must be recorded.
+What it does **not** prove: any successful detection, and whether the key itself is valid — a challenge
+that happens before authentication says nothing about the credential.
+
+**Defect found and fixed by this run:** the first version reported this 403 as "the account is not
+permitted to use this endpoint", which would have sent an operator to check the wrong thing. `classifyError`
+now distinguishes a non-JSON response from a real rejection (`edge_interstitial`), strips HTML from the
+message, and six new unit tests cover it.
 
 ## 5. Validation and abuse-control responses (curl, real server)
 
@@ -131,7 +145,7 @@ POST /api/analyze  ×22 from one IP                       → 200 ×17 then 429 
 
 | Gap | Why | Consequence |
 | --- | --- | --- |
-| No successful live call | no `CLOCKED_API_KEY` | the "quality of integration" criterion depends on the code and the error path only, for now |
+| No successful live call | from this network the service edge answers with an HTML interstitial (403) before authentication | the "quality of integration" criterion currently rests on the code and the failure path; a run from an unchallenged network is required |
 | Timeout and 402 not reproduced live | requires a slow or exhausted account | covered at the policy layer, not end to end |
 | No cross-browser run | Chromium only | Firefox/WebKit untested; no browser-specific APIs are used |
 | No accessibility audit tool | not installed | manual checks above only; axe/Lighthouse is a follow-up |

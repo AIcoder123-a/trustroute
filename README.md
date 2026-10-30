@@ -164,7 +164,7 @@ lib/report           pure export builder: no raw text, no entity values, no over
 
 | Layer | Count | Command |
 | --- | --- | --- |
-| Unit / integration (vitest) | 55 assertions in 7 files | `npm test` |
+| Unit / integration (vitest) | 61 assertions in 8 files | `npm test` |
 | Browser (Playwright, desktop + mobile) | 16 assertions | `npm run test:e2e` |
 
 The browser suite walks the real flow: load a case → screen → read the decision → inspect the masked copy →
@@ -172,10 +172,11 @@ approve → export JSON → print sheet, at 1440×900 and 390×844. Details and 
 
 ## Known limitations
 
-- **No live Clocked call has been recorded yet.** No API key exists in the build environment, so the
-  product ships with a clearly labelled mock. Live error handling has been exercised against the real
-  endpoint (a real 403 round trip, degraded to REVIEW); a successful detection transcript is still pending.
-  See `docs/API_INTEGRATION.md` §6.
+- **No successful live Clocked call has been recorded yet.** The requests leave the server and reach the
+  service, but from this network the edge answers with an HTML interstitial (`403`, "Just a moment…")
+  before authentication — so neither a detection nor a verdict about the key is available. The failure
+  path is fully exercised and fails closed (REVIEW, never PASS). A run from a network the provider does
+  not challenge is required. See `docs/API_INTEGRATION.md` §6.
 - Mock mode is a heuristic simulator, not a detector. It exists so the flow can be reviewed without a key.
 - The audit trail and rate limiter are per-process and in-memory: correct for a demo, not for a fleet.
 - No authentication. A public deployment needs a gate in front of it.

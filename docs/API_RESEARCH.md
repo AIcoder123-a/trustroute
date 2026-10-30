@@ -5,11 +5,13 @@
 package on npm, and the TypeScript declarations shipped in that package
 (`node_modules/clocked-sdk/dist/esm/types.d.ts`).
 
-> **Status of the evidence.** No live Clocked request has been made from this project yet: no
-> `CLOCKED_API_KEY` exists in the environment (verified 2026-10-30: `CLOCKED_API_KEY` unset). Every
-> response example below is **the recorded example published in the official documentation**, labelled
-> as such. Nothing in this file is a result produced by TrustRoute. TruspRoute's mock mode is a local
-> simulator and is never described as a Clocked result.
+> **Status of the evidence.** No *successful* live Clocked request has been recorded from this project.
+> Three real requests were attempted on 2026-10-30 and were all stopped by an HTML interstitial at the
+> service edge (`403`, before authentication), so no response body from the API has been observed yet.
+> Every response example below is **the recorded example published in the official documentation**,
+> labelled as such. Nothing in this file is a result produced by TrustRoute. TrustRoute's mock mode is a
+> local simulator and is never described as a Clocked result. See `docs/API_INTEGRATION.md` §6.1 for the
+> failed exchanges and what they do and do not prove.
 
 ---
 
@@ -204,7 +206,7 @@ these as `credits`, `costUsd`, `costBasis`.
 
 | Claim | Why it is unverified | How to verify |
 | --- | --- | --- |
-| Live request/response shape for the three endpoints | no API key in this environment | run `npm run verify:live` (see `docs/API_INTEGRATION.md`) with `CLOCKED_API_KEY` set |
+| Live request/response shape for the three endpoints | the edge returns an HTML challenge (403) from this network before authentication, so no API body has been seen | run `npm run verify:live` from a network the edge does not challenge (see `docs/API_INTEGRATION.md` §6) |
 | Credit cost per call for these payloads | depends on model time | read `X-Clocked-Credits` from a live run |
 | Exact `verdict` strings | only `injection`/`benign` and `malicious`/`suspicious`/`benign` appear in docs and recorded examples | log the verdict of a live run |
 | Behaviour of custom `api_key` entity kind | documented feature, no recorded example | one live `/pii` call containing a fake `sk_test_…` token |

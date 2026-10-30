@@ -129,40 +129,46 @@ Every non-`ok` status also sets `policy.degraded = true`, which changes the head
 
 ## 6. Live transcript
 
-### 6.1 First real network exchange — 2026-10-30, error path only
+### 6.1 Real network exchanges — 2026-10-30, blocked by an HTML interstitial
 
-One real HTTPS request was made to Clocked during Phase 0, with a deliberately invalid placeholder key,
-to prove the transport, the SDK and the error taxonomy work end to end. It was **not** a successful
-detection and it is not evidence of integration quality. Raw stage result as returned by
-`POST /api/analyze` with `CLOCKED_MODE=live`:
+Three real HTTPS requests were made to `clocked.rezolve.ai` (one per endpoint, via
+`node --env-file=.env.local scripts/live-smoke.mjs`). **All three were blocked before the API saw them**,
+by what looks like bot/network protection in front of the service: the response was a `403` carrying a
+Cloudflare interstitial page (`<title>Just a moment...</title>`) instead of JSON. The third request did
+not get a response at all.
 
 ```jsonc
 {
-  "mode": "live",
-  "stages": {
-    "guard":   { "status": "unauthorized", "latencyMs": 798, "attempts": 1,
-                 "error": { "code": "forbidden", "httpStatus": 403,
-                            "message": "The account is not permitted to use this endpoint. Check the plan and endpoint access.",
-                            "retryable": false } },
-    "protect": { "status": "unauthorized", "latencyMs": 797, "attempts": 1,
-                 "error": { "code": "forbidden", "httpStatus": 403, "retryable": false } },
-    "inspect": { "status": "skipped" }
-  },
-  "policy": { "decision": "REVIEW", "degraded": true,
-              "headline": "Screening incomplete. Hold the content and route it to a human." }
+  "runAt": "2026-10-30T10:24:35.109Z",
+  "sdk": "clocked-sdk@0.7.0",
+  "rows": [
+    { "endpoint": "POST /injection", "status": "error", "error": "PermissionDeniedError",
+      "httpStatus": 403, "attempts": 2, "body": "<html>…Just a moment…</html>" },
+    { "endpoint": "POST /pii",       "status": "error", "error": "PermissionDeniedError",
+      "httpStatus": 403, "attempts": 1, "body": "<html>…Just a moment…</html>" },
+    { "endpoint": "POST /script",    "status": "error", "error": "ConnectionError",
+      "httpStatus": null, "attempts": 2, "message": "fetch failed" }
+  ]
 }
 ```
 
 What this establishes:
 
-- the request really left the server and reached `clocked.rezolve.ai` over HTTPS (~800 ms round trip);
-- an unusable credential is surfaced as **403 PermissionDenied**, not 401 — the mapping in
-  `classifyError()` handles both, and the stage is marked `unauthorized`;
-- **the pipeline degraded to REVIEW and did not pass**, which is the safety invariant this project
-  cares about most;
-- no retry storm: `retryable: false` on a permission error, `attempts: 1`.
+- requests leave the server over HTTPS and reach the edge of the service (~1 s round trip);
+- **the key's validity cannot be determined** from this network, because the challenge happens before
+  authentication. No conclusion about the key should be drawn from a 403 whose body is HTML;
+- the transport fails closed: in the app, this becomes `policy.degraded = true` and the decision **REVIEW**,
+  never PASS (reproduced earlier with the same 403 shape, see `docs/TEST_REPORT.md` §4);
+- no retry storm: two attempts at most, then stop.
 
-Still missing: one **successful** call per endpoint.
+**Fix shipped as a result of this run:** `classifyError()` no longer reports an HTML body as
+"the account is not permitted to use this endpoint". A non-JSON 403/401 is now surfaced as
+`edge_interstitial` with an explanation that the request never reached the API, HTML is stripped from the
+message, and six unit tests pin the distinction (`tests/error-classification.test.ts`).
+
+**What is needed for a live demo:** a network path that the provider's protection does not challenge —
+typically a consumer/office network or a host with a residential egress, or a proxy the account owner
+controls. Retrying from the same egress will not change the result.
 
 ### 6.2 Successful detection transcript — NOT YET PRODUCED
 

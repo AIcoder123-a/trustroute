@@ -81,7 +81,7 @@ Protect run for every content type; Inspect runs only when the content is a scri
 | Item | State |
 | --- | --- |
 | Build, typecheck, lint | clean |
-| Unit / integration tests | 55 passing |
+| Unit / integration tests | 61 passing |
 | Browser tests | 16 passing (desktop + mobile) |
 | Live Clocked detections | **not yet recorded** — no API key at build time; the live error path was exercised against the real endpoint |
 | Deployment | <demo-url> |
