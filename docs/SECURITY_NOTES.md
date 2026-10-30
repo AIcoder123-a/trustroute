@@ -27,8 +27,14 @@ before the agent does.
   (no `NEXT_PUBLIC_`), not in a payload, not in an export, not in a log line.
 - `lib/config.ts` is server-only and throws on import in a browser context, so an accidental client
   import fails at build/runtime instead of leaking.
-- `.env*` is git-ignored; `.env.example` documents the variables and contains no values.
-- The live smoke script prints field *structure*, not the key, not the raw content.
+- `.env*` is git-ignored; `.env.example` documents the variables and contains no values. This was checked
+  rather than assumed: `git check-ignore` matches `.env.local`, and the live key value appears in no
+  tracked file and in no commit in `git log --all -p`.
+- Both verification scripts print field *structure*, not the key, not the raw content; the key is read
+  inside the script and never written to `stdout`, a file or a fixture.
+- `tests/fixtures/` contains real API responses. They were recorded from synthetic samples, and
+  `tests/live-contract.test.ts` asserts they carry no `Authorization`, `Bearer` or `CLOCKED_API_KEY`
+  string.
 - The exported report has an assertion in `tests/report.test.ts` that it contains neither `clk_…`
   patterns nor the string `CLOCKED_API_KEY`.
 

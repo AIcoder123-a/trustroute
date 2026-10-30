@@ -2,7 +2,8 @@
 
 **Run date:** 2026-10-30
 **Environment:** Windows 11, Node 22.22.2, npm 10.9.7, Chromium (Playwright 1.64.1)
-**Clocked key:** none. All detection behaviour below is either the labelled mock or the live *error* path.
+**Clocked key:** present and verified on 2026-10-30 (server-side `.env.local`, never in the tree, never in
+this report). Detection behaviour below is the labelled mock, the live path, or a recorded live response.
 
 ---
 
@@ -16,6 +17,8 @@
 | Production dependency audit | `npm audit --omit=dev` | **0 vulnerabilities** |
 | Full audit | `npm audit` | **0 vulnerabilities** (after upgrading Next 15.5.28 → 16.4.3 and vitest 3 → 5) |
 | Secrets in tree | `git grep -nE "clk_[A-Za-z0-9]{8,}"` | no matches |
+| Secrets in history | every tracked file and `git log --all -p` scanned for the live key value | no match in the working tree or in any commit |
+| Key exposure surface | `grep -rn NEXT_PUBLIC_` | no `NEXT_PUBLIC_` variable exists; the key is read only in `lib/clocked/live.ts` and `lib/config.ts`, both server-only |
 
 The initial dependency scan found a high-severity advisory in Next 15's bundled PostCSS and two critical
 advisories in vitest's worker pool. Both were fixed by upgrading rather than ignored: Next 16.4.3 and
@@ -26,8 +29,8 @@ vitest 5.0.5, re-verified with the full suite.
 ### 2.1 Unit and integration (vitest)
 
 ```
-Test Files  8 passed (8)
-     Tests  61 passed (61)
+Test Files  9 passed (9)
+     Tests  75 passed (75)
 ```
 
 | File | Assertions | Covers |
@@ -40,6 +43,7 @@ Test Files  8 passed (8)
 | `tests/validate.test.ts` | 10 | empty/whitespace, null bytes, unknown content type, prose vs script limits, policy length cap, non-object body |
 | `tests/ratelimit.test.ts` | 3 | limit enforcement, per-caller buckets, window refill |
 | `tests/error-classification.test.ts` | 6 | an HTML interstitial is never reported as a rejected key; genuine 401/403, timeout, connection failure and unknown errors each map to the right stage status; HTML never reaches the UI |
+| `tests/live-contract.test.ts` | 11 | recorded **real** 200 responses (`tests/fixtures/clocked-*.json`) normalise into the domain types; every span slices to its value; the rebuilt masked copy equals Clocked's own `anonymized_text`; Inspect offsets are document offsets and produce lines 1–4; the fixtures contain no credential |
 
 The two invariants that matter most, both enforced by tests:
 
@@ -87,41 +91,79 @@ Required coverage from the brief, with the actual evidence for each row.
 
 ## 4. Real network exchange with the Clocked API
 
-Three real requests were made on 2026-10-30 with the key present in `.env.local`
-(`node --env-file=.env.local scripts/live-smoke.mjs`). **All three were blocked by an HTML interstitial
-before authentication**, so this run proves the transport and the failure handling, not the integration.
+Two transports were exercised on 2026-10-30 with the real key.
+
+### 4.1 Server-side SDK path (what the product uses)
+
+```bash
+node --env-file=.env.local scripts/live-smoke.mjs
+```
 
 | Endpoint | SDK error class | HTTP | Attempts | Body |
 | --- | --- | --- | --- | --- |
-| `POST /injection` | `PermissionDeniedError` | 403 | 2 | `<html>…Just a moment…</html>` |
+| `POST /injection` | `ConnectionError` | — | 2 | `fetch failed` |
 | `POST /pii` | `PermissionDeniedError` | 403 | 1 | `<html>…Just a moment…</html>` |
-| `POST /script` | `ConnectionError` | — | 2 | `fetch failed` |
+| `POST /script` | `PermissionDeniedError` | 403 | 1 | `<html>…Just a moment…</html>` |
 
-In the running application the same shape produces:
+Narrowing, one variable at a time, all within the same minute and IP:
+
+| Probe | Result |
+| --- | --- |
+| Node-like `User-Agent` | 403 `cf-mitigated: challenge` |
+| Chrome `User-Agent` | 403 |
+| Full browser header set | 403 |
+| `--noproxy '*'` (bypass the local proxy) | 403 |
+| `/`, `/account`, `/apis`, `GET /clocked/pii` | 403 — whole host |
+| Headless Chromium, same machine | **200**, content renders |
+
+The variable that decides the outcome is the client fingerprint, not the network and not the credential.
+The app reacts exactly as designed (measured through `POST /api/analyze`, not inferred):
 
 ```jsonc
 {
   "mode": "live",
   "stages": {
-    "guard":  { "status": "error", "error": { "code": "edge_interstitial", "retryable": false } },
-    "protect": { "status": "error", "error": { "code": "edge_interstitial", "retryable": false } },
-    "inspect": { "status": "skipped" }
+    "guard":   { "status": "error",   "error": { "code": "edge_interstitial", "httpStatus": 403, "retryable": false } },
+    "protect": { "status": "error",   "error": { "code": "edge_interstitial", "httpStatus": 403, "retryable": false } },
+    "inspect": { "status": "skipped", "error": { "code": "not_requested" } }
   },
-  "policy": { "decision": "REVIEW", "degraded": true }
+  "policy": { "decision": "REVIEW", "degraded": true },
+  "warnings": ["At least one detection did not complete. The decision was degraded to REVIEW by policy, not by a model."]
 }
 ```
 
-What this proves: the request leaves the server over HTTPS and reaches the service edge; the SDK's error
-classes map onto TrustRoute stage statuses; an unusable channel degrades the run to REVIEW rather than
-passing it; the retry budget is respected (≤ 2 attempts).
+So: the request leaves the server over HTTPS and reaches the edge; the SDK's error classes map onto stage
+statuses; an unusable channel degrades to REVIEW with `detection_incomplete`; the retry budget holds at
+≤ 2 attempts. What it does not prove is anything about the key — a challenge before authentication is
+silent about the credential.
 
-What it does **not** prove: any successful detection, and whether the key itself is valid — a challenge
-that happens before authentication says nothing about the credential.
+### 4.2 Browser path (verification only)
 
-**Defect found and fixed by this run:** the first version reported this 403 as "the account is not
-permitted to use this endpoint", which would have sent an operator to check the wrong thing. `classifyError`
-now distinguishes a non-JSON response from a real rejection (`edge_interstitial`), strips HTML from the
-message, and six new unit tests cover it.
+```bash
+npm run verify:live:browser      # node scripts/live-verify.mjs
+```
+
+| Endpoint | HTTP | Credits | Cost | Latency | Result |
+| --- | --- | --- | --- | --- | --- |
+| `POST /injection` | 200 | 3 | $0.000598 | 564 ms | `verdict: injection`, 0.9957, `critical`, 1 evidence span |
+| `POST /pii` | 200 | 6 | $0.001195 | 510 ms | 6 entities: person, phone, email, credit_card, employee_id, api_key |
+| `POST /script` | 200 | 3 | $0.000598 | 429 ms | `verdict: malicious`, 0.9956, `critical`, 3 evidence spans |
+
+One full screen: **12 credits, $0.002391**. A malformed `/pii` request (unknown entity kind) answered
+`422` and charged nothing. The verbatim responses are committed under `tests/fixtures/` and asserted by
+`tests/live-contract.test.ts`.
+
+### 4.3 Defects and corrections caused by these runs
+
+1. `classifyError` reported an HTML interstitial as "the account is not permitted to use this endpoint",
+   which points an operator at the wrong thing. Now `edge_interstitial`, HTML stripped, 6 tests.
+2. The research note said Inspect offsets were "character offsets, not line numbers" without pinning the
+   scope. Measured: they are offsets into the **whole script** (a hit on line 2 came back as 50..85 while
+   `line` is 35 characters). `lib/highlight.ts` now states the measured rule, drops spans that do not fit
+   instead of clamping them, and `tests/highlight.test.ts` + `tests/live-contract.test.ts` pin it.
+3. `normalizeProtect` and the request catalogue were checked against real bytes: all 15 catalog kinds plus
+   `employee_id`/`api_key` are accepted, an unknown kind without a description is a `422`, and Protect
+   returns no `verdict` field.
 
 ## 5. Validation and abuse-control responses (curl, real server)
 
@@ -149,7 +191,7 @@ operator which variable is missing. Both paths state that nothing was screened a
 
 | Gap | Why | Consequence |
 | --- | --- | --- |
-| No successful live call | from this network the service edge answers with an HTML interstitial (403) before authentication | the "quality of integration" criterion currently rests on the code and the failure path; a run from an unchallenged network is required |
+| The live path the product uses is still blocked here | the edge challenges non-browser clients; Chromium passes from the same IP | detections are proven (4.2) and the failure path is proven (4.1), but the server-side call cannot complete from this machine until the endpoint is exempted from the browser-integrity challenge |
 | Timeout and 402 not reproduced live | requires a slow or exhausted account | covered at the policy layer, not end to end |
 | No cross-browser run | Chromium only | Firefox/WebKit untested; no browser-specific APIs are used |
 | No accessibility audit tool | not installed | manual checks above only; axe/Lighthouse is a follow-up |

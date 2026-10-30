@@ -39,6 +39,20 @@ function isHighSurrogate(code: number): boolean {
   return code >= 0xd800 && code <= 0xdbff;
 }
 
+/**
+ * Inspect evidence carries the matched `line` and a `start`/`end` pair. A
+ * recorded response shows those offsets are positions in the whole script, not
+ * in the line: a hit on the second line comes back as `{ start: 50, end: 85 }`
+ * while `line` is only 35 characters long. They are therefore used as document
+ * offsets and a span that does not fit is dropped rather than clamped into a
+ * plausible-looking but wrong highlight.
+ */
+function resolveScriptHit(text: string, hit: { start: number; end: number }): [number, number] | null {
+  if (!Number.isInteger(hit.start) || !Number.isInteger(hit.end)) return null;
+  if (hit.start < 0 || hit.end > text.length || hit.start >= hit.end) return null;
+  return [hit.start, hit.end];
+}
+
 function align(text: string, start: number, end: number): [number, number] {
   let s = start;
   let e = end;
@@ -76,8 +90,10 @@ export function buildSegments(
   }
 
   for (const hit of source.inspect?.evidence ?? []) {
-    if (hit.start < 0 || hit.end > text.length || hit.start >= hit.end) continue;
-    marks.push({ start: hit.start, end: hit.end, kind: 'script', priority: PRIORITY.script, label: 'script' });
+    const span = resolveScriptHit(text, hit);
+    if (span === null) continue;
+    const [start, end] = span;
+    marks.push({ start, end, kind: 'script', priority: PRIORITY.script, label: 'script' });
   }
 
   marks.sort((a, b) => b.priority - a.priority || a.start - b.start || b.end - a.end);

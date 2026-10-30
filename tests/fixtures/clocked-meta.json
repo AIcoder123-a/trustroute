@@ -1,0 +1,11 @@
+{
+  "capturedAt": "2026-10-30",
+  "transport": "Chromium same-origin fetch (scripts/live-verify.mjs); see docs/API_INTEGRATION.md 6.2",
+  "fixtures": {
+    "clocked-injection.json": { "capturedAt": "2026-10-30T11:11:24Z", "http": 200, "credits": 3, "costUsd": 0.000598 },
+    "clocked-pii.json": { "capturedAt": "2026-10-30T11:16:05Z", "http": 200, "credits": 7, "costUsd": 0.001394 },
+    "clocked-script.json": { "capturedAt": "2026-10-30T11:11:25Z", "http": 200, "credits": 2, "costUsd": 0.000398 },
+    "clocked-script-malicious.json": { "capturedAt": "2026-10-30T11:12:10Z", "http": 200, "credits": 3, "costUsd": 0.000598 }
+  },
+  "note": "Verbatim API responses to synthetic samples. No credential, header or real personal data is present; tests/live-contract.test.ts asserts the last point."
+}

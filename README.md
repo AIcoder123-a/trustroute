@@ -100,7 +100,8 @@ npm run dev
 | `npm run verify` | typecheck → lint → unit tests → build |
 | `npm test` | vitest: policy, redaction, highlighting, report, validation, rate limit, pipeline |
 | `npm run test:e2e` | Playwright, desktop and mobile |
-| `npm run verify:live` | three real Clocked calls; prints field structure, never content |
+| `npm run verify:live` | three real Clocked calls through `clocked-sdk`; prints field structure, never content |
+| `npm run verify:live:browser` | the same three calls through Chromium, for edges that challenge non-browser clients |
 
 Environment (`see .env.example`):
 
@@ -172,11 +173,15 @@ approve → export JSON → print sheet, at 1440×900 and 390×844. Details and 
 
 ## Known limitations
 
-- **No successful live Clocked call has been recorded yet.** The requests leave the server and reach the
-  service, but from this network the edge answers with an HTML interstitial (`403`, "Just a moment…")
-  before authentication — so neither a detection nor a verdict about the key is available. The failure
-  path is fully exercised and fails closed (REVIEW, never PASS). A run from a network the provider does
-  not challenge is required. See `docs/API_INTEGRATION.md` §6.
+- **All three endpoints are verified with a real key, but not yet from the server process.** On
+  2026-10-30 `/injection`, `/pii` and `/script` returned `200` with real detections, real credits and real
+  field structures (recorded in `tests/fixtures/`, asserted by `tests/live-contract.test.ts`). That run
+  went through a browser, because the service edge challenges non-browser clients with an HTML
+  interstitial (`403`, "Just a moment…") before authentication: `curl` and Node are refused from the same
+  IP and same minute in which Chromium succeeds. The product calls Clocked only from the server, so
+  `CLOCKED_MODE=live` on this machine reports `edge_interstitial` and falls closed to REVIEW — never PASS.
+  Exempting the endpoint from the browser-integrity challenge is a provider-side change. See
+  `docs/API_INTEGRATION.md` §6.1.
 - Mock mode is a heuristic simulator, not a detector. It exists so the flow can be reviewed without a key.
 - The audit trail and rate limiter are per-process and in-memory: correct for a demo, not for a fleet.
 - No authentication. A public deployment needs a gate in front of it.

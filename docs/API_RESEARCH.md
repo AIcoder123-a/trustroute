@@ -118,6 +118,11 @@ nine.
 TrustRoute requests all 15 catalog kinds plus two custom kinds defined by description:
 `employee_id` and `api_key` ("API keys, access tokens and other credentials"). `anonymize: "replace"`.
 
+**Measured:** a kind outside that catalogue without a description is rejected with
+`422 {"error": "The request was not accepted: unknown entity 'government_id': give it a description, or
+use one of …", "retryAsNew": true}` and **no credits are charged**. A `422` therefore means the request was
+malformed, not that the content was clean.
+
 ### Response
 
 ```jsonc
@@ -129,10 +134,15 @@ TrustRoute requests all 15 catalog kinds plus two custom kinds defined by descri
   "counts": { "person": 1, "email": 1, "bank_account": 1 },
   "threshold": 0.5,
   "instructions_used": "default",
+  "mentions": {},
+  "checks": { "trimmed": 0, "split": 0, "rejected": {} },
   "anonymized_text": "…Employee: <PERSON>, … Email: <EMAIL>. … bank account <BANK_ACCOUNT>…",
   "timing": { "read_ms": 175, "total_ms": 176 }
 }
 ```
+
+There is **no `verdict` field**: Protect reports findings, and any judgement is the policy engine's job.
+Entity objects also carry `mentions` alongside `type/value/start/end/confidence/source`.
 
 **Offset semantics (critical):** `end` is **exclusive**, and offsets refer to **the original input**, not
 to `anonymized_text`. TrustRoute therefore never uses API offsets to slice the transformed text; it
@@ -173,8 +183,11 @@ TrustRoute relies on when it compares the two copies.
 }
 ```
 
-**Documented caveat:** `evidence[].start/end` are **character offsets, not line numbers**. TrustRoute
-computes the line number itself (`lib/format.ts → lineNumberAt`) and renders `L<n>` in the UI.
+**Measured caveat (2026-10-30):** `evidence[].start/end` are **character offsets, not line numbers**, and
+they index the **whole script**, not the `line` string that comes with them. A recorded response for a
+hit on the second line read `{ line: "vssadmin delete shadows /all /quiet", start: 50, end: 85 }` — 35
+characters of line, 35 characters of span, offset 50 in the document. TrustRoute therefore treats them as
+document offsets and computes the line number itself (`lib/format.ts → lineNumberAt`) for the `L<n>` label.
 
 The endpoint classifies source code as data. It does not run the script, inspect a live host, or verify
 a download matches its claimed contents.
@@ -204,14 +217,17 @@ these as `credits`, `costUsd`, `costBasis`.
 
 ## 7. What is still unverified
 
+Verified with a real key on 2026-10-30 (transcript and field lists in `docs/API_INTEGRATION.md` §6.2,
+bytes kept in `tests/fixtures/`): the response shape of all three endpoints, the `verdict` strings
+(`injection`/`benign`, `malicious`/`benign`), credits per call, the custom `api_key` and `employee_id`
+kinds, and the exact offset semantics.
+
 | Claim | Why it is unverified | How to verify |
 | --- | --- | --- |
-| Live request/response shape for the three endpoints | the edge returns an HTML challenge (403) from this network before authentication, so no API body has been seen | run `npm run verify:live` from a network the edge does not challenge (see `docs/API_INTEGRATION.md` §6) |
-| Credit cost per call for these payloads | depends on model time | read `X-Clocked-Credits` from a live run |
-| Exact `verdict` strings | only `injection`/`benign` and `malicious`/`suspicious`/`benign` appear in docs and recorded examples | log the verdict of a live run |
-| Behaviour of custom `api_key` entity kind | documented feature, no recorded example | one live `/pii` call containing a fake `sk_test_…` token |
-| Whether `source: "content"` changes thresholds | not documented | A/B two live calls |
-| Latency under the 4-way concurrency of the Build plan | not measured | time three parallel live calls |
+| Live 402 (credits exhausted) and 429 (concurrency) behaviour | would need an exhausted account or a burst beyond the plan's concurrency | drive concurrency from a scripted burst; 402 needs a depleted balance |
+| Latency under the Build plan's 4-way concurrency | the three verification calls were sequential | time three parallel requests |
+| Whether `source: "content"` changes the decision threshold | not documented | A/B two live calls with the same text |
+| Regional and age eligibility for the prize | organiser policy, not an API question | ask the organiser |
 
 **Rule for this project:** when a live call is finally made, the resulting field structure is recorded in
 `docs/API_INTEGRATION.md` with the date, and the mock fixtures are *not* retro-fitted to look like it.

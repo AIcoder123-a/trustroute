@@ -38,7 +38,7 @@ Differentiators, in the order judges will see them:
 | 1 | Project scaffold + real API adapter + mock adapter | **done**; live calls **blocked on API key** |
 | 2 | Screening workflow: input → detect → mask → decide | **done** |
 | 3 | Human review, export, UI productisation | **done** |
-| 4 | Automated tests, security review, defect fixing | **done** (55 unit + 16 browser assertions green; dependency advisories fixed by upgrading) |
+| 4 | Automated tests, security review, defect fixing | **done** (75 unit + 16 browser assertions green; dependency advisories fixed by upgrading) |
 | 5 | Submission materials, deployment | **partly done**: all documents written, screenshots captured; deployment and the entry form need the entrant |
 
 ## 3. How each endpoint changes the product
@@ -105,22 +105,23 @@ reviewer sees the masked copy rather than raw data.
 | Review flow | `app/api/review/route.ts`, in-memory audit in `lib/audit.ts` |
 | Export | `lib/report.ts` + printable sheet in `components/ReportDialog.tsx` |
 | UI | `components/Workbench.tsx` and children |
-| Tests | 55 unit/integration assertions, 16 browser assertions (desktop + mobile) |
+| Tests | 75 unit/integration assertions, 16 browser assertions (desktop + mobile) |
 
 ## 6. Blocked on the entrant
 
 | # | Blocker | Impact if unresolved |
 | --- | --- | --- |
-| 1 | A network path that reaches the Clocked API | A key is present in `.env.local`, but every request from this network is stopped by an HTML interstitial (`403`) at the edge. **No live integration evidence yet.** |
-| 2 | Clocked account + `CLOCKEDHACKATHON` credits | not yet confirmed; the credit balance is unknown until a request actually reaches the API |
+| 1 | An exemption from the edge's browser-integrity challenge for `/clocked/*` | The key works: all three endpoints returned real detections on 2026-10-30 (through a browser). The server-side SDK path is still answered with `403 cf-mitigated: challenge` from this machine, so `CLOCKED_MODE=live` reports `edge_interstitial` and falls closed to REVIEW. Needs a provider-side change, not a code change. |
+| 2 | Clocked account + `CLOCKEDHACKATHON` credits | **resolved**: the account authenticates; a full three-endpoint screen costs 12 credits / $0.0024 |
 | 3 | Public GitHub repo (needs explicit authorization to push) | entry requirement |
 | 4 | Public demo deployment (needs authorization) | entry requirement |
 | 5 | Age + Wise payout eligibility confirmation | eligibility / prize |
 
 ## 7. Remaining engineering work (no blockers)
 
-1. Live smoke script (`scripts/live-smoke.mjs`, `npm run verify:live`) that performs one real call per
-   endpoint and records the field structure. **Written; not yet run — needs a key.**
+1. ~~Live smoke script~~ — written and run. The recorded field structure now backs `tests/fixtures/` and
+   `tests/live-contract.test.ts`; `scripts/live-verify.mjs` (`npm run verify:live:browser`) reproduces it
+   through a browser.
 2. ~~Persist nothing sensitive~~ — done: the audit record has no text field, and `tests/pipeline.test.ts`
    asserts neither the content nor an entity value appears in it.
 3. ~~Accessibility pass~~ — done: the decision block is a polite live region with an explicit

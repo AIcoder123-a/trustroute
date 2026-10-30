@@ -40,9 +40,11 @@ lib/
   validate.ts           request validation
   ratelimit.ts          per-IP fixed window
 tests/                  vitest unit + integration
+tests/fixtures/         verbatim real responses recorded 2026-10-30 (synthetic samples only)
 e2e/                    playwright, desktop + mobile
 docs/                   rules, API research, architecture, test report, submission drafts
-scripts/live-smoke.mjs  one real call per endpoint; use with a key
+scripts/live-smoke.mjs  one real call per endpoint through the SDK; use with a key
+scripts/live-verify.mjs  the same three calls through Chromium; verification harness, never imported by app/
 ```
 
 ## 3. Hard rules (do not break)
@@ -60,7 +62,8 @@ scripts/live-smoke.mjs  one real call per endpoint; use with a key
 6. **Demo data stays synthetic.** `example.com` / `example.net` / 555 phone ranges only. No real
    person's data, ever, in cases, fixtures, tests, screenshots or docs.
 7. **No API key, token, account name or private conversation in this repository.** Not in docs, not in
-   commit messages.
+   commit messages. `tests/fixtures/` holds real API responses: they must stay synthetic content, and they
+   are checked for credential-shaped strings by `tests/live-contract.test.ts`.
 8. **Do not push, deploy, publish or submit without the owner's explicit instruction.** This repo is
    local until the owner says otherwise.
 
@@ -74,7 +77,8 @@ npm run lint         # eslint (next/core-web-vitals + typescript)
 npm test             # vitest: policy, redaction, highlight, report, validation, rate limit, pipeline
 npm run test:e2e     # playwright desktop + mobile (starts its own server on :3100)
 npm run verify       # typecheck + lint + test + build
-npm run verify:live  # three real Clocked calls; needs CLOCKED_API_KEY
+npm run verify:live  # three real Clocked calls through the SDK; needs CLOCKED_API_KEY
+npm run verify:live:browser  # the same calls through Chromium (see §6 on the edge challenge)
 ```
 
 Playwright downloads browsers once: `npx playwright install chromium`.
@@ -94,10 +98,11 @@ Playwright downloads browsers once: `npx playwright install chromium`.
 
 | Area | State |
 | --- | --- |
-| Build, typecheck, lint | clean |
-| Unit/integration tests | 61 passing |
+| Build, typecheck, lint | clean, 0 warnings |
+| Unit/integration tests | 75 passing (9 files, incl. contract tests against recorded real responses) |
 | Browser tests | 16 passing (8 tests × desktop + mobile) |
-| Live Clocked calls | attempted; **all blocked by an HTML interstitial (403) at the service edge** before authentication. No successful detection recorded. |
+| Live Clocked detections | **verified**: `/injection` 0.9957 critical, `/pii` 6 entities incl. both custom kinds, `/script` 0.9948 malicious. 12 credits / $0.0024 per full screen |
+| Live path from the server | **blocked**: the edge challenges non-browser clients (`403 cf-mitigated: challenge`) before authentication; Chromium from the same IP succeeds. Falls closed to REVIEW with `edge_interstitial` |
 | Deployment | not deployed |
 | Git remote | none; local commits only |
 
@@ -105,7 +110,8 @@ Open items and blockers are tracked in `docs/IMPLEMENTATION_PLAN.md` §6–7.
 
 ## 7. If you pick this up next
 
-1. Get `CLOCKED_API_KEY`, run `npm run verify:live`, and record the real field structure in
-   `docs/API_INTEGRATION.md`. Replace nothing else — the mock stays a mock.
+1. The field structure is recorded (`docs/API_INTEGRATION.md` §6.2, `tests/fixtures/`). What remains is
+   the server-side path: ask the provider to exempt `/clocked/*` from the browser-integrity challenge,
+   then re-run `npm run verify:live`. Replace nothing else — the mock stays a mock.
 2. Re-run `npm run verify` and `npm run test:e2e`.
 3. Only then touch `docs/SUBMISSION_DRAFT.md` with real URLs.

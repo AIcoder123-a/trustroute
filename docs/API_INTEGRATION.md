@@ -1,9 +1,13 @@
 # API integration
 
-How TrustRoute calls Clocked, field by field, and what is still awaiting a live run.
+How TrustRoute calls Clocked, field by field, and what a real key actually returned.
 
-**Status: no live call has been made.** `CLOCKED_API_KEY` was not present in the build environment on
-2026-10-30. Section 6 is an empty, waiting transcript. Do not fill it with anything but real output.
+**Status: all three endpoints verified with a real key on 2026-10-30** — 200, real detections, real
+credits debited (section 6.2). One transport caveat remains and is documented in 6.1: from the machine
+this project was built on, the service edge challenges **non-browser** clients before authentication, so
+the app's server-side path (`clocked-sdk` over Node) gets `403 edge_interstitial` there while a real
+browser gets `200`. The product still calls Clocked only from the server; the browser run is a
+verification harness (`scripts/live-verify.mjs`), never a runtime transport.
 
 ---
 
@@ -115,7 +119,9 @@ converts them to line numbers with `lineNumberAt()` before rendering `L<n>`.
 | Failure | Stage status | Policy effect |
 | --- | --- | --- |
 | 400 / 413 / 422 | `invalid` | REVIEW |
-| 401, 403 | `unauthorized` | REVIEW |
+| 401 | `unauthorized` | REVIEW |
+| 403 with a JSON body | `unauthorized` | REVIEW |
+| 403/401 answered with an HTML page | `edge_interstitial` (not retryable) | REVIEW — the request never reached the API |
 | 402 | `quota` | REVIEW |
 | 429 | `quota` | REVIEW |
 | 409 | `error` | REVIEW |
@@ -129,69 +135,134 @@ Every non-`ok` status also sets `policy.degraded = true`, which changes the head
 
 ## 6. Live transcript
 
-### 6.1 Real network exchanges — 2026-10-30, blocked by an HTML interstitial
+### 6.1 A real key, two transports — 2026-10-30
 
-Three real HTTPS requests were made to `clocked.rezolve.ai` (one per endpoint, via
-`node --env-file=.env.local scripts/live-smoke.mjs`). **All three were blocked before the API saw them**,
-by what looks like bot/network protection in front of the service: the response was a `403` carrying a
-Cloudflare interstitial page (`<title>Just a moment...</title>`) instead of JSON. The third request did
-not get a response at all.
+`CLOCKED_API_KEY` was present in `.env.local` (52 characters, server-only, ignored by Git). Two things were
+then measured from the same machine within minutes of each other.
+
+**Server-side path (`clocked-sdk` over Node) — blocked at the edge.**
 
 ```jsonc
 {
-  "runAt": "2026-10-30T10:24:35.109Z",
+  "runAt": "2026-10-30T11:09:28.749Z",
   "sdk": "clocked-sdk@0.7.0",
   "rows": [
-    { "endpoint": "POST /injection", "status": "error", "error": "PermissionDeniedError",
-      "httpStatus": 403, "attempts": 2, "body": "<html>…Just a moment…</html>" },
-    { "endpoint": "POST /pii",       "status": "error", "error": "PermissionDeniedError",
-      "httpStatus": 403, "attempts": 1, "body": "<html>…Just a moment…</html>" },
-    { "endpoint": "POST /script",    "status": "error", "error": "ConnectionError",
-      "httpStatus": null, "attempts": 2, "message": "fetch failed" }
+    { "endpoint": "POST /injection", "status": "error", "error": "ConnectionError",       "attempts": 2 },
+    { "endpoint": "POST /pii",       "status": "error", "error": "PermissionDeniedError", "httpStatus": 403,
+      "body": "<!DOCTYPE html><title>Just a moment...</title>…" },
+    { "endpoint": "POST /script",    "status": "error", "error": "PermissionDeniedError", "httpStatus": 403,
+      "body": "<!DOCTYPE html><title>Just a moment...</title>…" }
   ]
 }
 ```
 
-What this establishes:
+Systematic narrowing, one variable at a time:
 
-- requests leave the server over HTTPS and reach the edge of the service (~1 s round trip);
-- **the key's validity cannot be determined** from this network, because the challenge happens before
-  authentication. No conclusion about the key should be drawn from a 403 whose body is HTML;
-- the transport fails closed: in the app, this becomes `policy.degraded = true` and the decision **REVIEW**,
-  never PASS (reproduced earlier with the same 403 shape, see `docs/TEST_REPORT.md` §4);
-- no retry storm: two attempts at most, then stop.
+| Probe | Result |
+| --- | --- |
+| `curl` with a Node-like `User-Agent` | `403`, `cf-mitigated: challenge` |
+| `curl` with a Chrome `User-Agent` | `403`, challenge |
+| `curl` with the full browser header set (`sec-ch-ua`, `sec-fetch-*`, `Origin`, `Referer`, `Accept-Language`) | `403`, challenge |
+| `curl --noproxy '*'` (bypassing the local proxy) | `403`, challenge |
+| `curl` to `/`, `/account`, `/apis`, and `GET /clocked/pii` | `403`, challenge — the whole host, not one endpoint |
+| Headless **Chromium** from the same machine | `200`, page renders, no `cf_clearance` cookie needed |
 
-**Fix shipped as a result of this run:** `classifyError()` no longer reports an HTML body as
-"the account is not permitted to use this endpoint". A non-JSON 403/401 is now surfaced as
-`edge_interstitial` with an explanation that the request never reached the API, HTML is stripped from the
-message, and six unit tests pin the distinction (`tests/error-classification.test.ts`).
+So the discriminating variable is the **client's TLS/HTTP fingerprint**, not the network path, not the
+method, not the path, and certainly not the credential: the same IP, the same minute, the same key —
+allowed for Chromium, challenged for `curl` and for Node. Cloudflare calls this a managed challenge; the
+practical consequence is that an API-only client is treated as automated traffic.
 
-**What is needed for a live demo:** a network path that the provider's protection does not challenge —
-typically a consumer/office network or a host with a residential egress, or a proxy the account owner
-controls. Retrying from the same egress will not change the result.
+**What this means for the product.** `CLOCKED_MODE=live` on this machine produces three
+`edge_interstitial` stage failures, `policy.degraded = true`, reason `detection_incomplete`, decision
+**REVIEW** — measured end-to-end through `POST /api/analyze`, not inferred. Nothing is ever released on a
+failed detection. The fix belongs upstream: the endpoint needs to be exempted from the browser-integrity
+challenge for non-browser API keys, which is a one-line WAF exclusion the account owner should request.
 
-### 6.2 Successful detection transcript — NOT YET PRODUCED
+**Browser path (used only to verify the key) — succeeds.** `scripts/live-verify.mjs` drives the project's
+Chromium to make the same three calls from the service's own origin. Results in 6.2.
 
-Run this with a real key and paste the output below, verbatim:
+### 6.2 Successful detection transcript — 2026-10-30
 
 ```bash
-CLOCKED_API_KEY=clk_... npm run verify:live
+npm run verify:live:browser      # node scripts/live-verify.mjs
 ```
 
-Expected: three rows (`POST /injection`, `POST /pii`, `POST /script`) with `status: "ok"`, the HTTP
-status, latency, credits, verdict and the field list each endpoint actually returned.
+```
+injection  http=200  credits=3  cost=$0.000598  ms=564  verdict=injection  injection=0.9957  severity=critical  evidence=1
+pii        http=200  credits=6  cost=$0.001195  ms=510  entities=person+phone+email+credit_card+employee_id+api_key
+script     http=200  credits=3  cost=$0.000598  ms=429  verdict=malicious  malicious=0.9956  severity=critical  evidence=3
 
-```jsonc
-// awaiting first successful live run — intentionally empty
+total: 12 credits, $0.002391
 ```
 
-When it exists, also record here:
+One full three-endpoint screen therefore costs **about 12 credits / $0.0024** (observed range per call:
+`/injection` 3–4, `/pii` 6–7, `/script` 2–3). A rejected request, such as an unknown entity kind, is
+answered `422` with **no credits charged**. The marketing page advertises 4,000 free credits; the
+account's remaining balance is behind a web login and was not read here, so consumption is reported per
+call rather than as a balance.
 
-- the exact `verdict` strings observed per endpoint;
-- whether `severity` was present on every response or only some;
-- the credits debited per call, and therefore the cost of one full three-endpoint screen;
-- any field that appeared and is not documented (so the normaliser can be tightened);
-- whether the custom `api_key` kind was detected in the Protect sample.
+The verbatim responses are committed as `tests/fixtures/clocked-*.json` and asserted by
+`tests/live-contract.test.ts`, so a drift in field names or offsets fails the build rather than the demo.
+
+#### Field structure actually observed
+
+`POST /injection` — 200:
+
+```
+model, injection, verdict, threshold, source, instructions_used,
+category, categories, severity, severity_expected, severities,
+evidence[], residual, residual_verdict, timing
+```
+
+- `verdict`: the string `"injection"` (the benign counterpart is `"benign"`, as `/script` shows).
+- `severity`: a **string** (`"critical"`), while `severities` is the full 5-way distribution
+  (`none/low/medium/high/critical`). `severity_expected` is a **number** (4.943 here), not a label —
+  a confidence-weighted severity score.
+- `categories`: a 7-way distribution, `category` the arg-max (`"tool misuse or data exfiltration"`).
+- `evidence[]`: `{ quote, start, end, confidence, without }`. `text.slice(start, end) === quote` exactly
+  (verified: 46..156 → 110 characters). `without` re-scores the text with that span removed.
+- Present and undocumented when this project started: `residual` (0.0038 — the same text with all evidence
+  removed), `residual_verdict`, `timing { read_ms, total_ms }`, `instructions_used: "custom"`.
+
+`POST /pii` — 200:
+
+```
+model, entities[], counts, threshold, instructions_used, mentions, checks, anonymized_text, timing
+```
+
+- `entities[]`: `{ type, value, start, end, confidence, source, mentions }`. `source` was `"model"` on all
+  six findings. `text.slice(start, end) === value` on all six.
+- The 15 built-in kinds are `person, email, phone, address, date_of_birth, ssn, credit_card, bank_account,
+  ip_address, passport, drivers_license, medical, username, organization, location`. Any other kind must be
+  sent with a `description` — the API answers `422 unknown entity '…'` otherwise.
+- `anonymized_text` uses `<PERSON>`, `<CREDIT_CARD>`, `<EMPLOYEE_ID>`, `<API_KEY>` — angle-bracket upper-case
+  tokens, the same convention TrustRoute builds, so the two can be compared byte for byte (they match; see
+  the contract test).
+- No `verdict` field: Protect reports findings, not a judgement. The decision is the policy engine's job.
+- Also returned: `mentions`, `checks { trimmed, split, rejected }`.
+
+`POST /script` — 200:
+
+```
+model, malicious, suspicious, verdict, threshold, instructions_used,
+category, categories, severity, severity_expected, severities, evidence[], timing
+```
+
+- `verdict`: `"malicious"` (0.9948) or `"benign"` (0.0026) in the two samples.
+- `evidence[]`: `{ line, start, end, confidence }` — and the offsets are **positions in the whole script,
+  not in `line`**: a hit on the second line came back as `{ line: "vssadmin delete shadows /all /quiet",
+  start: 50, end: 85 }` while `line` is 35 characters long. This was wrong in the earlier research note
+  ("character offsets not line numbers" was right, but the scope was not pinned down); the adapter now
+  treats them as document offsets and `lib/highlight.ts` documents the measured behaviour.
+- Benign scripts return an empty `evidence` array rather than omitting the key.
+
+#### What the key proved
+
+- One key works on all three endpoints; nothing about the account had to be changed between calls.
+- Detections are real: a classic injection scored 0.9957 / critical, the PII sample found 6 entities
+  including both custom kinds, and a Defender-disabling script scored 0.9948 / critical.
+- Credits and cost arrive on every response as headers (`x-clocked-credits`, `x-clocked-cost-usd`), which is
+  what the workbench surfaces per stage.
 
 ## 7. What the demo does without a key
 

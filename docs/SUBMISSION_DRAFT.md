@@ -81,9 +81,10 @@ Protect run for every content type; Inspect runs only when the content is a scri
 | Item | State |
 | --- | --- |
 | Build, typecheck, lint | clean |
-| Unit / integration tests | 61 passing |
+| Unit / integration tests | 75 passing |
 | Browser tests | 16 passing (desktop + mobile) |
-| Live Clocked detections | **not yet recorded** — no API key at build time; the live error path was exercised against the real endpoint |
+| Live Clocked detections | **verified with a real key** — `/injection` 0.9957 critical, `/pii` 6 entities including two custom kinds, `/script` 0.9948 malicious; 12 credits / $0.0024 per screen; responses recorded under `tests/fixtures/` |
+| Server-side live path | blocked from the build machine by an edge browser-integrity challenge on non-browser clients; the app falls closed to REVIEW rather than passing |
 | Deployment | <demo-url> |
 | Repository | <github-url> |
 
