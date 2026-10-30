@@ -72,7 +72,7 @@ function tidy(raw: string): string {
  * network interstitial in front of the API. Reporting it as "your key is wrong"
  * would send an operator down the wrong path, so it gets its own code.
  */
-function edgeInterstitial(status: number | null, raw: string): StageError {
+function edgeInterstitial(status: number | null): StageError {
   return {
     code: 'edge_interstitial',
     message: `The request was answered with an HTML page instead of a JSON result (HTTP ${status ?? 'n/a'}). That is normally bot or network protection in front of the API rather than a credential problem, so retrying from the same network will not help. Verify the key from another network or from the provider's playground.`,
@@ -107,7 +107,7 @@ export function classifyError(error: unknown): { status: StageStatus; error: Sta
   if (error instanceof AuthenticationError || error instanceof PermissionDeniedError) {
     const raw = typeof error.error === 'string' ? error.error : '';
     if (looksLikeHtml(raw)) {
-      return { status: 'error', error: edgeInterstitial(error.status, raw) };
+      return { status: 'error', error: edgeInterstitial(error.status) };
     }
     if (error instanceof AuthenticationError) {
       return {
@@ -166,7 +166,7 @@ export function classifyError(error: unknown): { status: StageStatus; error: Sta
   if (error instanceof ClockedError) {
     const raw = typeof error.error === 'string' ? error.error : '';
     if (looksLikeHtml(raw)) {
-      return { status: 'error', error: edgeInterstitial(error.status, raw) };
+      return { status: 'error', error: edgeInterstitial(error.status) };
     }
     return {
       status: 'error',

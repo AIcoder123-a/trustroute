@@ -131,6 +131,10 @@ POST /api/analyze  {"text":"a"*17000}                    → 400  {"error":"inva
 POST /api/analyze  ×22 from one IP                       → 200 ×17 then 429 ×5 (limit 20 − 3 earlier requests)
 ```
 
+The 429 carries `Retry-After`; the workbench reads that header and prints the wait in seconds instead of a
+generic "try later", and surfaces the server's `hint` on a 503 so a misconfigured deployment tells the
+operator which variable is missing. Both paths state that nothing was screened and nothing was released.
+
 ## 6. Manual review pass
 
 - Desktop 1600×1000 and mobile 390×844 screenshotted at every state (idle, block, masked copy, review,

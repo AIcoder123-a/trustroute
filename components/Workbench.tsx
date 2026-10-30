@@ -131,6 +131,8 @@ export function Workbench({
 
         if (!response.ok) {
           const failure = body as { error?: string; message?: string; hint?: string };
+          const retryAfter = Number.parseInt(response.headers.get('Retry-After') ?? '', 10);
+          const base = failure.message ?? 'The server did not return a usable response.';
           setResult(null);
           setError({
             title:
@@ -141,7 +143,14 @@ export function Workbench({
                   : response.status === 400
                     ? 'Input rejected'
                     : 'Screening failed',
-            detail: failure.message ?? 'The server did not return a usable response.',
+            detail:
+              response.status === 429 && Number.isFinite(retryAfter) && retryAfter > 0
+                ? `This browser has used its screening allowance. Try again in ${retryAfter} second${
+                    retryAfter === 1 ? '' : 's'
+                  }. Nothing was screened and nothing was released.`
+                : failure.hint
+                  ? `${base} ${failure.hint}`
+                  : base,
             retryable: response.status !== 400,
           });
           setRunState('error');
