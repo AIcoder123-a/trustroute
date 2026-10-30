@@ -108,7 +108,13 @@ export function DecisionPanel({
         </span>
       </header>
 
-      <div className={`px-3.5 py-3.5 ${style.bg}`}>
+      <div
+        className={`px-3.5 py-3.5 ${style.bg}`}
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        aria-label={`Screening decision: ${effectiveDecision}`}
+      >
         <div className="flex items-center justify-between gap-2">
           <span data-testid="decision-badge">
             <DecisionBadge decision={effectiveDecision} large />

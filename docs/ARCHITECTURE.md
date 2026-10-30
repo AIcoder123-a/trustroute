@@ -20,6 +20,8 @@ that touches a secret, a third-party API or a decision lives on the server.
 │                                                                         │
 │  app/api/analyze/route.ts                                               │
 │    rate limit → validate → pipeline → audit                             │
+│  app/api/audit/route.ts   GET — last 10 content-free records            │
+│  app/api/review/route.ts  POST — human decision, internal state only    │
 │                                                                         │
 │  lib/pipeline.ts                                                        │
 │    ┌──────────────┬──────────────┬──────────────┐                       │
@@ -131,10 +133,10 @@ properties.
 | Concern | Choice |
 | --- | --- |
 | Runtime | Node 22 (route handlers use `runtime = 'nodejs'` for `node:crypto`) |
-| Framework | Next.js 15.5 App Router, React 19 |
+| Framework | Next.js 16.4 App Router, React 19.3 |
 | Styling | Tailwind CSS 4 with a small custom design system |
 | Clocked | `clocked-sdk@0.7.0` (server only, `serverExternalPackages`) |
-| Tests | vitest (pure logic), Playwright (browser) |
+| Tests | vitest 5 (pure logic), Playwright 1.64 (browser) |
 | Icons | hand-written inline SVG — no icon dependency |
 
 No database, no auth, no external font fetch, no telemetry. The deployment is stateless except for the

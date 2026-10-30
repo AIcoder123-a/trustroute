@@ -4,12 +4,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { DEMO_CASES, DEFAULT_INSTRUCTIONS } from '@/lib/cases';
 import { buildReport } from '@/lib/report';
-import type { AnalyzeResponse, ContentType, DemoCase, Decision, ReviewAction, ReviewEvent } from '@/lib/types';
+import type {
+  AnalyzeResponse,
+  AuditRecord,
+  ContentType,
+  Decision,
+  DemoCase,
+  ReviewAction,
+  ReviewEvent,
+} from '@/lib/types';
 import { CONTENT_TYPE_LABELS } from '@/lib/types';
 import { CaseRail, CaseStrip, ContentTypeTabs } from '@/components/CaseRail';
 import { ContentView } from '@/components/ContentView';
 import { DecisionPanel } from '@/components/DecisionPanel';
 import { ReportDialog } from '@/components/ReportDialog';
+import { SessionTrail } from '@/components/SessionTrail';
 import { GuardCard, InspectCard, ProtectCard } from '@/components/stages';
 import {
   AlertIcon,
@@ -45,6 +54,7 @@ export function Workbench({
   const [reportOpen, setReportOpen] = useState(false);
   const [reviewBusy, setReviewBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [audit, setAudit] = useState<AuditRecord[]>([]);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const resultRef = useRef<HTMLDivElement>(null);
@@ -57,6 +67,17 @@ export function Workbench({
     () => activeCase?.instructions ?? DEFAULT_INSTRUCTIONS[contentType],
     [activeCase, contentType],
   );
+
+  const refreshAudit = useCallback(async () => {
+    try {
+      const response = await fetch('/api/audit', { cache: 'no-store' });
+      if (!response.ok) return;
+      const body = (await response.json()) as { records: AuditRecord[] };
+      setAudit(body.records);
+    } catch {
+      // The trail is a convenience; a failure to read it must not affect screening.
+    }
+  }, []);
 
   const resetRun = useCallback(() => {
     setResult(null);
@@ -129,6 +150,7 @@ export function Workbench({
 
         setResult(body as AnalyzeResponse);
         setRunState('ready');
+        void refreshAudit();
         requestAnimationFrame(() => resultRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
       } catch (cause) {
         setResult(null);
@@ -143,7 +165,7 @@ export function Workbench({
         setRunState('error');
       }
     },
-    [activeCase, contentType, text],
+    [activeCase, contentType, text, refreshAudit],
   );
 
   const submitReview = useCallback(
@@ -162,6 +184,7 @@ export function Workbench({
         if (!response.ok) throw new Error(`Review endpoint returned ${response.status}`);
         const body = (await response.json()) as { event: ReviewEvent };
         setReview(body.event);
+        void refreshAudit();
         setNotice(
           action === 'approve'
             ? 'Approved internally. The content would now be released to the agent as the masked copy.'
@@ -175,7 +198,7 @@ export function Workbench({
         setReviewBusy(false);
       }
     },
-    [result],
+    [result, refreshAudit],
   );
 
   const report = useMemo(() => (result ? buildReport(result, review) : null), [result, review]);
@@ -192,6 +215,10 @@ export function Workbench({
     anchor.remove();
     URL.revokeObjectURL(url);
   }, [report, result]);
+
+  useEffect(() => {
+    void refreshAudit();
+  }, [refreshAudit]);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -281,13 +308,10 @@ export function Workbench({
           <div className="order-3 hidden min-w-0 lg:order-1 lg:block">
             <div className="lg:sticky lg:top-[72px] lg:space-y-3">
               <CaseRail cases={DEMO_CASES} activeId={activeCase?.id ?? null} onSelect={loadCase} />
-              <div className="panel hidden px-3 py-3 xl:block">
-                <h2 className="label mb-1.5">Screening boundary</h2>
-                <p className="text-[11px] leading-relaxed text-fg-3">
-                  TrustRoute screens input. It never runs a script, sends a message or calls a downstream tool — the
-                  decision is advisory for whatever orchestrator sits behind it.
-                </p>
-              </div>
+              <SessionTrail records={audit} />
+              <p className="px-1 text-[10.5px] leading-relaxed text-fg-3">
+                TrustRoute screens input. It never runs a script, sends a message or calls a downstream tool.
+              </p>
             </div>
           </div>
 
@@ -384,6 +408,7 @@ export function Workbench({
                     className="btn btn-primary h-8 px-3 text-[11.5px]"
                     onClick={() => void analyze()}
                     disabled={!canAnalyze}
+                    aria-busy={busy}
                   >
                     {busy ? <LoaderIcon size={13} className="animate-spin" /> : <ScanIcon size={13} />}
                     {busy ? 'Screening…' : 'Screen content'}

@@ -22,3 +22,6 @@ blob-report/
 Thumbs.db
 next-env.d.ts
 tsconfig.tsbuildinfo
+
+#WorkBuddy local data
+.workbuddy/

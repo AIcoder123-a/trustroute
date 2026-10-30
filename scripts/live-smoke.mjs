@@ -101,10 +101,10 @@ await call('POST /injection', (request) => client.injection(request), SAMPLES.in
 await call('POST /pii', (request) => client.pii(request), SAMPLES.pii);
 await call('POST /script', (request) => client.script(request), SAMPLES.script);
 
-console.log(JSON.stringify({ runAt: new Date().toISOString(), sdk: 'clocked-sdk@0.7.0', rows }, null, 2));
+process.stdout.write(`${JSON.stringify({ runAt: new Date().toISOString(), sdk: 'clocked-sdk@0.7.0', rows }, null, 2)}\n`);
 
 if (failed > 0) {
   console.error(`\n${failed} of 3 calls failed.`);
   process.exit(1);
 }
-console.log('\nAll three endpoints answered. Copy the JSON above into docs/API_INTEGRATION.md.');
+process.stdout.write('\nAll three endpoints answered. Copy the JSON above into docs/API_INTEGRATION.md.\n');

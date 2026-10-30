@@ -20,7 +20,9 @@ app/
   api/analyze/route.ts  POST — the only way content reaches Clocked
   api/review/route.ts   POST — records a human decision (in memory)
   api/status/route.ts   GET  — reports mode + limits, never the key
+  api/audit/route.ts    GET  — last 10 content-free audit records (session trail)
 components/             UI (client components); Workbench.tsx orchestrates
+  SessionTrail.tsx      content-free run history shown in the left rail
 lib/
   clocked/              transport adapters
     live.ts             real SDK calls, error taxonomy

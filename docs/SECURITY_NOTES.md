@@ -95,7 +95,7 @@ Set in `next.config.ts`: `X-Content-Type-Options: nosniff`, `Referrer-Policy: st
 `poweredByHeader: false`. API responses are `Cache-Control: no-store`.
 
 A Content-Security-Policy is **not** set, because a wrong one breaks the app and a permissive one is
-theatre. Next.js 15 needs `unsafe-inline` for its inline bootstrap script unless you adopt nonces; that
+theatre. Next.js needs `unsafe-inline` for its inline bootstrap script unless you adopt nonces; that
 is a follow-up, listed rather than faked.
 
 ## 9. Reporting

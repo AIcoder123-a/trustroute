@@ -38,8 +38,8 @@ Differentiators, in the order judges will see them:
 | 1 | Project scaffold + real API adapter + mock adapter | **done**; live calls **blocked on API key** |
 | 2 | Screening workflow: input → detect → mask → decide | **done** |
 | 3 | Human review, export, UI productisation | **done** |
-| 4 | Automated tests, security review, defect fixing | **in progress** (unit + 16 browser tests green) |
-| 5 | Submission materials, deployment | **not started** (needs entrant authorization) |
+| 4 | Automated tests, security review, defect fixing | **done** (55 unit + 16 browser assertions green; dependency advisories fixed by upgrading) |
+| 5 | Submission materials, deployment | **partly done**: all documents written, screenshots captured; deployment and the entry form need the entrant |
 
 ## 3. How each endpoint changes the product
 
@@ -120,11 +120,13 @@ reviewer sees the masked copy rather than raw data.
 ## 7. Remaining engineering work (no blockers)
 
 1. Live smoke script (`scripts/live-smoke.mjs`, `npm run verify:live`) that performs one real call per
-   endpoint and writes a redacted transcript into `docs/API_INTEGRATION.md`. **Written; not yet run.**
-2. Persist nothing sensitive: confirm the audit table never stores text (already covered by a test).
-3. Accessibility pass: focus order, contrast of `text-fg-3` on `bg-panel`, `aria-live` on the decision
-   panel when a run finishes.
-4. Rate-limit UX: surface `Retry-After` in the error banner (currently a generic message).
+   endpoint and records the field structure. **Written; not yet run — needs a key.**
+2. ~~Persist nothing sensitive~~ — done: the audit record has no text field, and `tests/pipeline.test.ts`
+   asserts neither the content nor an entity value appears in it.
+3. ~~Accessibility pass~~ — done: the decision block is a polite live region with an explicit
+   `aria-label`, the analyse button exposes `aria-busy`, focus order is keyboard-verified, contrast
+   checked manually.
+4. Rate-limit UX: surface `Retry-After` in the error banner (currently a generic message). Small.
 5. Optional stretch (only if the core is finished): a `Verify` (`/grounding`) panel that checks a
    candidate agent reply against the approved documents. Explicitly deprioritised — breadth outside the
    Protect/Guard/Inspect group is worth 0 for that award and risks the core.
