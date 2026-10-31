@@ -12,9 +12,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "verify:live": "node scripts/live-smoke.mjs",
+    "verify:live": "node scripts/live-acceptance.mjs",
     "verify:live:browser": "node scripts/live-verify.mjs",
-    "verify": "npm run typecheck && npm run lint && npm run test && npm run build"
+    "verify": "npm run typecheck && npm run lint && npm run test && npm run build",
+    "accept:live": "node scripts/live-acceptance.mjs"
   },
   "dependencies": {
     "clocked-sdk": "0.7.0",

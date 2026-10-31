@@ -1,6 +1,6 @@
 # Test report
 
-**Run date:** 2026-10-30
+**Run date:** 2026-10-31
 **Environment:** Windows 11, Node 22.22.2, npm 10.9.7, Chromium (Playwright 1.64.1)
 **Clocked key:** present and verified on 2026-10-30 (server-side `.env.local`, never in the tree, never in
 this report). Detection behaviour below is the labelled mock, the live path, or a recorded live response.
@@ -29,13 +29,13 @@ vitest 5.0.5, re-verified with the full suite.
 ### 2.1 Unit and integration (vitest)
 
 ```
-Test Files  14 passed (14)
-     Tests  109 passed (109)
+Test Files  17 passed (17)
+     Tests  132 passed (132)
 ```
 
 | File | Assertions | Covers |
 | --- | --- | --- |
-| `tests/policy.test.ts` | 14 | block/review/pass rules, threshold overrides, degradation on every failure class, BLOCK precedence over REVIEW |
+| `tests/policy.test.ts` | 19 | block/review/pass rules, threshold overrides, degradation on every failure class, BLOCK precedence over REVIEW, and the explicit `screening: unavailable` state (headline, trace entry, reviewer instruction) |
 | `tests/redact.test.ts` | 7 | placeholder output, out-of-bounds and inverted spans, value re-anchoring, overlap resolution, surrogate-pair safety, comparison with `anonymized_text` |
 | `tests/pipeline.test.ts` | 11 | all 8 demo cases end to end through the mock adapter, content-type routing (Inspect skipped for prose), audit record contains no raw content, mock labelling |
 | `tests/report.test.ts` | 5 | no raw PII or entity values in the export, provenance fields, review inclusion, evidence withholding, no key-like strings |
@@ -48,6 +48,9 @@ Test Files  14 passed (14)
 | `tests/review-note.test.ts` | 5 | rejection requires a reasoned note, approval does not, notes are trimmed and capped at 280 |
 | `tests/harness-hygiene.test.ts` | 7 | the verification harness attaches the credential out of band and never inside page JavaScript; no `NEXT_PUBLIC_*` anywhere; the key is read in exactly two server-only modules |
 | `tests/copy-consistency.test.ts` | 8 | no mock label claims Clocked as its source; every mock source label reads as simulated; the policy engine attributes a detection to the API only in live mode; a mock report is not "compared with Clocked"; the claim cannot be reintroduced as a literal in `components/` |
+| `tests/origin.test.ts` | 6 | no `Origin` accepted, same host accepted, `x-forwarded-host` accepted, another site refused, `Origin: null` refused, an unparsable origin refused rather than trusted |
+| `tests/admission.test.ts` | 6 | per-caller window, concurrency slot and release, one caller cannot consume another's slot, whole-deployment daily ceiling, reset at UTC midnight |
+| `tests/http-guards.test.ts` | 6 | cross-origin POST → 403 on both routes, oversized body → 413 before parsing, malformed JSON → 400 not 500, missing text → 400, exhausted window → 429 with `Retry-After` |
 | `tests/live-contract.test.ts` | 11 | recorded **real** 200 responses (`tests/fixtures/clocked-*.json`) normalise into the domain types; every span slices to its value; the rebuilt masked copy equals Clocked's own `anonymized_text`; Inspect offsets are document offsets and produce lines 1–4; the fixtures contain no credential |
 
 The two invariants that matter most, both enforced by tests:
@@ -60,11 +63,11 @@ The two invariants that matter most, both enforced by tests:
 ### 2.2 Browser (Playwright)
 
 ```
-35 passed, 1 skipped (53.0s)   # 18 scenarios × desktop 1440×900 and mobile 390×844
+44 passed, 2 skipped (1.9m)   # 23 scenarios × desktop 1440×900 and mobile 390×844
 ```
 
-The one skip is deliberate: the compact decision bar only exists below the `xl` breakpoint, so it is
-asserted on the mobile project and skipped on desktop.
+Both skips are deliberate: the compact decision bar and the narrow-screen unavailable bar only exist below
+the `xl` breakpoint, so each is asserted on the mobile project and skipped on desktop.
 
 | Scenario | Assertions |
 | --- | --- |
@@ -85,6 +88,11 @@ asserted on the mobile project and skipped on desktop.
 | Reasons up front | the blocking reason is readable without expanding the rule trace |
 | Narrow-screen decision bar | below `xl` the decision and its headline sit above the results, and "Why" jumps to the full panel |
 | Failed request | an aborted `/api/analyze` produces an alert and no decision badge — never a pass |
+| Screening unavailable | with Protect failing, the badge reads *Unavailable* (not `REVIEW`), the band carries `Screening unavailable — manual review required` and "no risk verdict", the stage says it contributed nothing, and the forwarded copy is withheld |
+| Incomplete export | the downloaded report has `decision.screening = "unavailable"`, `degraded: true`, and a disclaimer that it is not a risk assessment |
+| Service refused | a `503` from `/api/analyze` shows "Screening unavailable" and no decision badge |
+| Cancel | a slow screen is cancelled; the page says nothing was screened, no decision appears, and exactly one request was made |
+| Narrow-screen unavailable | on mobile the compact bar carries the unavailable state and still links to the full panel |
 
 ## 3. Behavioural matrix
 
@@ -113,7 +121,7 @@ Two transports were exercised on 2026-10-30 with the real key.
 ### 4.1 Server-side SDK path (what the product uses)
 
 ```bash
-node --env-file=.env.local scripts/live-smoke.mjs
+node --env-file=.env.local scripts/live-acceptance.mjs
 ```
 
 | Endpoint | SDK error class | HTTP | Attempts | Body |
@@ -186,11 +194,26 @@ One full screen: **12 credits, $0.002391**. A malformed `/pii` request (unknown 
 
 ## 5. Validation and abuse-control responses (curl, real server)
 
+Run on 2026-10-31 against `npm start` (`CLOCKED_MODE=mock RATE_LIMIT_REQUESTS=50`), one request per line,
+status and body quoted from the response:
+
 ```
-POST /api/analyze  {"text":"   "}                        → 400  {"error":"invalid_input","message":"Nothing to screen…"}
-POST /api/analyze  {"text":"a"*17000}                    → 400  {"error":"invalid_input","message":"Content is 17,000 characters; the limit…"}
-POST /api/analyze  ×22 from one IP                       → 200 ×17 then 429 ×5 (limit 20 − 3 earlier requests)
+POST /api/analyze  {text, contentType:"support_ticket"}   → 200  policy REVIEW · screening complete
+                                                            x-ratelimit-limit: 50 · x-ratelimit-remaining: 46
+                                                            x-daily-remaining: 236 · no access-control-*
+POST /api/analyze  Origin: https://evil.example            → 403  {"error":"cross_origin_blocked", …}
+POST /api/analyze  Origin: null                            → 403  {"error":"cross_origin_blocked", …}
+POST /api/analyze  body 600 KB                             → 413  {"error":"payload_too_large", …}
+POST /api/analyze  {"text":"   "}                          → 400  {"error":"invalid_input","message":"Nothing to screen…"}
+POST /api/analyze  {"text":"a"*17000, …}                   → 400  {"error":"invalid_input","message":"Content is 17,000 characters; the limit…"}
+POST /api/analyze  contentType:"prose"                     → 400  {"error":"invalid_input","message":"Field "contentType" must be one of…"}
+POST /api/analyze  ×22 from one IP                         → 200 ×17 then 429 ×5 (limit 20 − 3 earlier requests)
 ```
+
+The three refusals arrive before any detection runs: the origin check is the first statement in the handler,
+the body cap is applied to `content-length` before reading and again to the bytes actually read, and the
+admission check runs before `request.text()`. A cross-origin response carries no `Access-Control-Allow-Origin`
+header at all — the endpoint is not a public API that a third-party page may call with a visitor's browser.
 
 The 429 carries `Retry-After`; the workbench reads that header and prints the wait in seconds instead of a
 generic "try later", and surfaces the server's `hint` on a 503 so a misconfigured deployment tells the

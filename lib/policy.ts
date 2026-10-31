@@ -405,6 +405,25 @@ export function evaluatePolicy(input: PolicyInput): PolicyOutcome {
   if (block) decision = 'BLOCK';
   else if (review) decision = 'REVIEW';
 
+  // A partial run is not a finding. Saying "hold for review" is true but not
+  // enough: a reader can hear "review" as "something was detected". This flag
+  // drives an explicit unavailable state in the interface and the export.
+  //
+  // A block still counts as a verdict even when another stage failed: Guard
+  // saying "injection" is a finding, not an absence of one.
+  const screening = degraded && !block ? 'unavailable' : 'complete';
+
+  checks.push(
+    check(
+      'screening_complete',
+      'Required detections completed',
+      degraded ? 'at least one did not complete' : inspectRequired ? '3 of 3' : '2 of 2',
+      'all required',
+      degraded ? 'failed' : 'pass',
+      'pipeline',
+    ),
+  );
+
   const actions: string[] = [];
   let headline: string;
 
@@ -413,14 +432,16 @@ export function evaluatePolicy(input: PolicyInput): PolicyOutcome {
     actions.push('Quarantine the message and stop the agent run.');
     actions.push('Notify the content owner out of band — never through this channel.');
     actions.push('Keep the hashed audit record; the original stays unscreened-for-forwarding.');
+  } else if (degraded) {
+    headline = 'Screening unavailable — manual review required.';
+    actions.push('Do not treat this run as a risk verdict: at least one required detection returned no result.');
+    actions.push('Re-run the failed detection, or screen the content somewhere that can reach the API.');
+    actions.push('Until then, a reviewer must read the content itself before anything is released.');
   } else if (decision === 'REVIEW') {
-    headline = degraded
-      ? 'Screening incomplete. Hold the content and route it to a human.'
-      : 'Hold at the human checkpoint before the agent reads it.';
+    headline = 'Hold at the human checkpoint before the agent reads it.';
     actions.push('Route to a reviewer with the evidence below.');
     if (redaction.maskedText) actions.push('Forward only the masked copy, and only after approval.');
     else actions.push('Forward nothing until a reviewer has read the content.');
-    if (degraded) actions.push('Re-run the failed detection before making any decision.');
   } else {
     headline = redaction.maskedText && (protectData?.entities.length ?? 0) > 0
       ? 'Safe to forward — as the masked copy.'
@@ -433,6 +454,7 @@ export function evaluatePolicy(input: PolicyInput): PolicyOutcome {
   return {
     decision,
     headline,
+    screening,
     reasons,
     actions,
     checks,

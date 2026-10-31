@@ -1,7 +1,7 @@
 # Competition rules — Clocked Build Challenge 2026
 
-**Verification date:** 2026-10-30
-**Sources read in full on that date:**
+**Verification date:** 2026-10-30 · **re-verified 2026-10-31**
+**Sources read in full on those dates:**
 
 | Document | URL |
 | --- | --- |
@@ -9,8 +9,13 @@
 | Official rules | https://clocked.rezolve.ai/build-challenge/rules |
 | API documentation (index) | https://clocked.rezolve.ai/docs |
 
-Everything below is quoted or paraphrased from those pages on that date. Where a page did not answer a
-question, the item is marked **UNVERIFIED** rather than guessed.
+Everything below is quoted or paraphrased from those pages. Where a page did not answer a question, the
+item is marked **UNVERIFIED** rather than guessed.
+
+**Change log check, 2026-10-31.** The rules page states: *"Changes: none since publication on October 19,
+2026."* Nothing in sections 3–8 differs from the 2026-10-30 reading. The re-read added the detail in §5.1
+(the form asks how the application handles uncertain results, missing information and failed requests) and
+confirmed §5.2 (no length is specified for the demo video).
 
 ---
 
@@ -120,6 +125,33 @@ pre-existing code; no prior project was reused.
 
 ## 5. What must be submitted
 
+### 5.1 The form, and what it asks about failure
+
+Section 5 says the form asks for the project name and overview; a demo (a working application link, **or** a
+short video of the application in use); a public source repository with setup instructions and its
+development history; which Clocked endpoints were used and how their outputs affect the application,
+including how several endpoints work together and what each contributes; optionally what was learned; team
+member details; and the award categories.
+
+It also says a **public write-up** (a README, or a post on DEV, Hashnode, Medium or a personal blog) *may*
+be linked, and that "where relevant" it should explain **how the application handles uncertain results,
+missing information, and failed requests**.
+
+That sentence is the closest the rules come to describing this project's central design choice. TrustRoute
+answers it in three places: `Screening unavailable — manual review required` in the interface, the same
+state in the export, and `docs/PROJECT_OVERVIEW.md` §"When a detection does not complete". The README is
+the write-up; no blog post is required.
+
+### 5.2 The demo: link or video, and how long
+
+- The rules accept **either** a working application link **or** a short video. Both are safer than one.
+- **No duration is specified.** The 90–120 second target in `docs/DEMO_SCRIPT.md` is this project's choice
+  for reviewer attention, not a rule. Do not describe it as one.
+- The demo and the repository must stay **publicly accessible through November 18, 2026**. A demo behind a
+  login, or a private repository, may be scored on what remains accessible or set aside.
+- A public repository is required; **no particular licence is required by the rules.** The repository must
+  show its development history (the commit dates are the evidence).
+
 Section 5 requires the entry form (submitted from a Clocked account) to contain:
 
 - project name and overview — what it does, who it is for, what problem it solves;
@@ -215,8 +247,9 @@ Choice. Decisions of the organizer and judges are final.
 | --- | --- | --- | --- |
 | 1 | Confirm Wise can pay a mainland-China recipient (ask on the LinkedIn announcement) | entrant | cash prize |
 | 2 | Confirm the entrant is 18+ and of legal majority | entrant | eligibility |
-| 3 | Create a Clocked account and redeem `CLOCKEDHACKATHON` (20,000 credits total) | entrant | live API testing |
-| 4 | Provide `CLOCKED_API_KEY` for live integration evidence | entrant | judged "quality of integration" |
+| 3 | ~~Create a Clocked account and redeem `CLOCKEDHACKATHON`~~ — **done**; 20,000 credits available | entrant | — |
+| 4 | ~~Provide `CLOCKED_API_KEY`~~ — **done**; three endpoints verified with real detections on 2026-10-30 | entrant | — |
+| 4a | Get the server-side path accepted (currently `403 cf-mitigated: challenge`) — provider question, not a code change | entrant + provider | judged "quality of integration" |
 | 5 | Create and publish the public GitHub repository | entrant (authorization required) | entry requirement |
 | 6 | Deploy a public demo URL | entrant (authorization required) | entry requirement |
 | 7 | Complete the entry form before 2026-11-10 23:59 ET | entrant | submission |
@@ -225,9 +258,10 @@ Choice. Decisions of the organizer and judges are final.
 
 - Wise coverage for mainland China business payments (section 3.1).
 - The entrant's age (section 3.2).
-- The `Changes` section of the rules page — the page states that later changes are dated there; the
-  change log itself was not captured in this pass and should be re-read before submitting.
-- Whether a "short video" alone satisfies the demo requirement when no public deployment exists. The
-  rules allow either "a working application link, or a short video of the application in use"; the
-  safer reading is that both are better.
+- ~~The `Changes` section~~ — checked 2026-10-31: none since publication on 2026-10-19. Re-check before
+  submitting, in case a dated clarification is added.
+- Whether a "short video" alone satisfies the demo requirement when no public deployment exists.**The
+  rules are explicit that either is acceptable**, so a video plus a repository satisfies section 5; the
+  safer reading is still that both are better, and that a judge who cannot open a link will rely on the
+  video alone.
 - Tax treatment for a non-US resident winner beyond "Wise may request W-8 documentation".

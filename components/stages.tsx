@@ -64,7 +64,9 @@ function StageShell({
             </div>
             <p className="mt-1 text-[12px] leading-relaxed text-fg-2">{stage.error?.message ?? 'No result was returned.'}</p>
             <p className="mt-1.5 text-[11.5px] leading-relaxed text-fg-3">
-              Policy consequence: this stage cannot contribute a pass, so the run is held for review.
+              Policy consequence: this stage contributed nothing, so the run reports{' '}
+              <span className="text-[#f0c48a]">screening unavailable</span> and is held for manual review. No pass can
+              come from a missing result.
             </p>
           </div>
         </div>

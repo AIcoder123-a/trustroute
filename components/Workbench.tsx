@@ -28,7 +28,7 @@ import { EvidencePanel } from '@/components/EvidencePanel';
 import { ReportDialog } from '@/components/ReportDialog';
 import { SessionTrail } from '@/components/SessionTrail';
 import { GuardCard, InspectCard, ProtectCard } from '@/components/stages';
-import { DecisionBadge } from '@/components/ui';
+import { DecisionBadge, UnavailableBadge } from '@/components/ui';
 import {
   AlertIcon,
   ArrowRightIcon,
@@ -72,6 +72,12 @@ export function Workbench({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const resultRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  /**
+   * Monotonic run id. A response is only applied when it belongs to the newest
+   * request — otherwise a slow first screen could overwrite the result of a
+   * second one the reviewer started after cancelling.
+   */
+  const runSeq = useRef(0);
 
   const limit = contentType === 'script' ? limits.scriptCharacters : limits.proseCharacters;
   const overLimit = text.length > limit;
@@ -115,6 +121,8 @@ export function Workbench({
 
       const controller = new AbortController();
       abortRef.current = controller;
+      const seq = runSeq.current + 1;
+      runSeq.current = seq;
 
       try {
         const response = await fetch('/api/analyze', {
@@ -134,6 +142,8 @@ export function Workbench({
           | AnalyzeResponse
           | { error?: string; message?: string; hint?: string };
 
+        if (seq !== runSeq.current) return;
+
         if (!response.ok) {
           const failure = body as { error?: string; message?: string; hint?: string };
           const retryAfter = Number.parseInt(response.headers.get('Retry-After') ?? '', 10);
@@ -144,7 +154,7 @@ export function Workbench({
               response.status === 429
                 ? 'Rate limited'
                 : response.status === 503
-                  ? 'Screening is not configured'
+                  ? 'Screening unavailable'
                   : response.status === 400
                     ? 'Input rejected'
                     : 'Screening failed',
@@ -167,6 +177,7 @@ export function Workbench({
         void refreshAudit();
         requestAnimationFrame(() => resultRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
       } catch (cause) {
+        if (seq !== runSeq.current) return;
         if (cause instanceof Error && cause.name === 'AbortError') {
           // The reviewer stopped it. Nothing was decided, so there is no result
           // and no decision to override — say that instead of "network error".
@@ -186,7 +197,8 @@ export function Workbench({
         });
         setRunState('error');
       } finally {
-        abortRef.current = null;
+        // Only the newest request owns the ref; a stale one must not clear it.
+        if (abortRef.current === controller) abortRef.current = null;
       }
     },
     [activeCase, contentType, text, refreshAudit],
@@ -619,6 +631,7 @@ export function Workbench({
                 <MobileDecisionBar
                   decision={review?.decisionAfter ?? result.policy.decision}
                   headline={result.policy.headline}
+                  unavailable={result.policy.screening === 'unavailable' && review === null}
                 />
               </div>
             ) : null}
@@ -719,10 +732,18 @@ export function Workbench({
   );
 }
 
-function MobileDecisionBar({ decision, headline }: { decision: Decision; headline: string }) {
+function MobileDecisionBar({
+  decision,
+  headline,
+  unavailable,
+}: {
+  decision: Decision;
+  headline: string;
+  unavailable: boolean;
+}) {
   return (
-    <div className="panel flex items-center gap-2.5 px-3 py-2.5">
-      <DecisionBadge decision={decision} />
+    <div className="panel flex items-center gap-2.5 px-3 py-2.5" data-screening={unavailable ? 'unavailable' : 'complete'}>
+      {unavailable ? <UnavailableBadge /> : <DecisionBadge decision={decision} />}
       <p className="min-w-0 flex-1 text-[12px] leading-snug text-fg-2">{headline}</p>
       <a href="#decision" className="btn h-7 shrink-0 px-2 text-[11.5px]">
         Why

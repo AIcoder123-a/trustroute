@@ -26,8 +26,11 @@ export async function GET() {
       limits: {
         proseCharacters: LIMITS.proseCharacters,
         scriptCharacters: LIMITS.scriptCharacters,
+        maxBodyBytes: LIMITS.maxBodyBytes,
         requestsPerWindow: LIMITS.requestsPerWindow,
         windowMinutes: Math.round(LIMITS.windowMs / 60000),
+        dailyScreens: LIMITS.dailyScreens,
+        concurrentPerCaller: LIMITS.concurrentPerCaller,
       },
     },
     { headers: { 'Cache-Control': 'no-store' } },

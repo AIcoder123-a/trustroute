@@ -239,8 +239,9 @@ export function ContentView({
             </div>
           ) : (
             <div className="flex h-full min-h-[180px] items-center justify-center px-6 text-center text-[12.5px] leading-relaxed text-fg-3">
-              No forwarded copy. Protect returned no findings, or a masked copy could not be built from the spans — in
-              which case policy will not allow the original through in its place.
+              {result?.stages.protect.status !== 'ok'
+                ? 'No forwarded copy: Protect did not complete, so nothing was masked and nothing may be forwarded. This run reports screening unavailable.'
+                : 'No forwarded copy. Protect returned no findings, or a masked copy could not be built from the spans — in which case policy will not allow the original through in its place.'}
             </div>
           )
         ) : (

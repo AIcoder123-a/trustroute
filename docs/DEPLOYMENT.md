@@ -66,51 +66,104 @@ Reading the result:
 | `403 challenge` from both | the rule is not about this network | ask the provider to exempt `/clocked/*` (see `.local/support/SUPPORT_EMAIL.md`) before deploying |
 | `403` from CI but `200` from hotspot | the rule penalises datacenter egress | deploy behind a residential/office egress you control, or keep the demo simulated |
 
-## 4. Free hosting, ranked for this specific app
+## 4. Free hosts, compared against what this app actually needs
 
-Assessed against what the app needs, not against generic five-star reviews. Prices and limits change;
-re-check before committing.
+Not "which host is popular". Six requirements decide this, and a host that fails one of them is not a
+candidate however good its developer experience:
 
-| Host | Fits this app? | Notes |
-| --- | --- | --- |
-| **Vercel (Hobby)** | Best fit | First-party Next.js 16 support, secret env vars, 300 s function default on Hobby. Free tier is non-commercial — fine for a public demo, read the terms. Egress is datacenter. |
-| **Cloudflare Workers / Pages** | Possible, more work | Needs the `nodejs` runtime compatibility flags and an adapter for the Node SDK; request body limit is smaller than our caps; egress is inside the same network as the challenge. |
-| **Render (free web service)** | Adequate | Node runtime, secrets, sleeps after idle (cold start ~30 s, which is longer than a reviewer's patience). |
-| **Fly.io** | Adequate | Free allowance is thin, needs a Dockerfile, allows choosing a region close to the API. |
-| **Railway / Koyeb** | Trial credit | Works, but "free" is time-limited; a demo that dies mid-judging is worse than no demo. |
-| **Netlify** | Weak fit | Next.js adapter lags; route handlers need functions config. |
-| **GitHub Pages / any static host** | **No** | There is no server, so no key handling and no screening. This app cannot be exported statically by design. |
+| Requirement | Why it is non-negotiable here |
+| --- | --- |
+| A **Node.js** runtime for route handlers | `/api/analyze` calls the SDK; there is no static export |
+| **Server-side environment variables** | the key must never be inlined into the client bundle |
+| **≥ 60 s per request** | three detections in parallel, each with a 30 s client timeout |
+| **Outbound HTTPS** to `clocked.rezolve.ai` | the whole product is a client of that API |
+| A **free tier that lasts through 2026-11-18** | judging runs to the winners' announcement |
+| **Terms that allow a public demo** | some free tiers are personal-use only |
 
-**Recommendation if the live path works:** Vercel Hobby, one project, one environment variable,
-`CLOCKED_MODE=live`, `RATE_LIMIT_REQUESTS=20`. It is the smallest configuration surface and the only one
-where the Next.js behaviour on the host matches the behaviour measured locally.
+Searched on 2026-10-31; limits change, so re-check before deploying.
 
-**Recommendation if the live path is refused everywhere:** deploy anyway, but with
-`CLOCKED_MODE=mock` and the banner the app already renders — a demo that says what it is beats a demo
-that fails with a red error box, and beats a repository that can only be run locally.
+| Host | Node + secrets | Request ceiling | Free-tier caveat worth knowing | Fit |
+| --- | --- | --- | --- | --- |
+| **Vercel Hobby** | Yes: Node runtime, encrypted env vars per environment | 300 s max duration; 4.5 MB request/response payload; 4 CPU-hours/month; 1 M invocations | Free tier is **personal, non-commercial use only**, 100 deployments/day | **Best fit technically.** One project, one variable, no adapter. Read the non-commercial clause against how the demo is presented. |
+| **Render — free web service** | Yes | No function-style cap, but the instance sleeps | Free instances spin down when idle; the first request after that is slow | Adequate. A cold start in front of a judge is the whole risk. |
+| **Fly.io** | Yes, via `fly secrets` | Configurable, no 60 s problem | Free allowance is small and requires a card; needs a Dockerfile | Adequate; you also choose the region closest to the API. |
+| **Cloudflare Workers / Pages** | Yes, with `nodejs_compat` | **Free plan: 10 ms CPU per request** (I/O wait excluded), 100 k requests/day | Next.js on Workers needs the OpenNext adapter, and 10 ms CPU is a real risk for server rendering; the paid plan raises CPU to 30 s | **More work, and possibly paid.** Attractive only because the request would originate inside the same network as the API — which is a hypothesis about the challenge, not a fix. |
+| **Railway / Koyeb** | Yes | Generous | "Free" is a trial credit with an expiry | Poor: a demo that dies mid-judging is worse than no demo. |
+| **Netlify** | Adapter-dependent | Fine | Next.js support lags the framework release | Weak fit for Next 16 route handlers. |
+| **GitHub Pages / any static host** | No server | — | — | **Impossible by design.** No server means no key handling and no screening. |
 
-## 5. Pre-flight checklist (for whenever the owner authorises it)
+### 4.1 Recommendation
 
-1. `npm run verify` — type, lint, 101 unit assertions, build.
-2. `npx playwright test` — 24 browser assertions, desktop + mobile.
+**If the server-side live path passes** (see §3): Vercel Hobby, one project, `CLOCKED_MODE=live`,
+`DAILY_SCREENS=40`, `RATE_LIMIT_REQUESTS=10`. It is the smallest configuration surface, and its Next.js
+behaviour is the one the local production build already exercises.
+
+**If it is refused everywhere:** deploy the same build with `CLOCKED_MODE=mock`. The demo is then a
+labelled simulation — the banner, the per-stage badges and the export all say so — but a judge can open it,
+run the whole workflow, and read the code. A working, honest simulated demo plus recorded live fixtures is
+a stronger entry than a link that only works on the author's laptop.
+
+**Never** deploy with a live key and an unbounded daily budget. §5 is the arithmetic.
+
+## 5. Protecting the credit balance
+
+Live screening is not free: a full screen costs **12–19 credits** (measured, §6.2 of
+`docs/API_INTEGRATION.md`). A 20,000-credit balance is therefore about **1,000–1,600 screens in total** —
+enough for a demo, not enough for an open endpoint.
+
+| Control | Where | Default | What it stops |
+| --- | --- | --- | --- |
+| Per-IP window | `RATE_LIMIT_REQUESTS` / `LIMITS.windowMs` | 20 per 5 min | one visitor holding the button down |
+| Per-caller concurrency | `LIMITS.concurrentPerCaller` | 2 | ten tabs from one visitor, which is also how the provider's 4-concurrent limit gets tripped |
+| Whole-deployment daily ceiling | `DAILY_SCREENS` | **60 live**, 240 mock | many visitors, which per-IP limits cannot see |
+| Input caps | `LIMITS.proseCharacters` / `scriptCharacters` | 16 k / 32 k | one request that costs several times the normal price |
+| Same-origin check | `lib/origin.ts` | on | another site triggering paid screens from a visitor's browser |
+
+Recommended live configuration for a ten-day public window:
+
+```
+CLOCKED_MODE=live
+RATE_LIMIT_REQUESTS=10
+DAILY_SCREENS=40          # 40 × ~15 credits ≈ 600 credits/day ≈ 6,000 over the window
+```
+
+40 screens a day is enough for a judge who opens the link, loads two examples and reads the interface; it
+is not enough for someone scraping the endpoint. `X-Daily-Remaining` on every response makes the remaining
+budget visible to whoever is operating it, and `GET /api/status` publishes the configured ceilings (never
+the key).
+
+The counters live in process memory. One instance is exact; several instances each keep their own, so the
+effective ceiling is `instances × DAILY_SCREENS`. Put a shared limiter at the edge if the host scales out.
+
+## 6. Pre-flight checklist (for whenever the owner authorises it)
+
+1. `npm run verify` — typecheck, lint, unit tests, production build.
+2. `npx playwright test` — desktop and mobile flows.
 3. `npm audit` — currently 0 vulnerabilities.
-4. Confirm the deployment has **no** `NEXT_PUBLIC_*` variable and that `/api/status` reports
-   `configuredKey: true` without echoing the key.
-5. Set `RATE_LIMIT_REQUESTS` to the demo allowance (20 per 5 minutes) and put the URL behind a
-   Cloudflare rate-limit rule if it will be public for a week.
-6. After deploy, run the three checks against the deployed URL — not against localhost — and paste the
-   response headers into `docs/API_INTEGRATION.md` §6.2. Until that exists, the deployed instance is
-   unverified no matter how green the build was.
+4. Confirm the deployment has **no** `NEXT_PUBLIC_*` variable, and that `/api/status` reports the expected
+   `mode` without echoing the key.
+5. Set `CLOCKED_MODE`, `RATE_LIMIT_REQUESTS` and `DAILY_SCREENS` as in §5, and confirm the values in
+   `/api/status`.
+6. After deploy, run the three checks **against the deployed URL**, not localhost:
 
-## 6. Delivery strategy: three tiers, and what each one is worth
+   ```bash
+   CLOCKED_BASE_URL=https://<deployment>/api/clocked node scripts/live-acceptance.mjs   # only if such a proxy exists
+   curl -s https://<deployment>/api/status | jq
+   ```
+
+   There is no proxy route in this app by design — the point of step 6 is to prove the deployed instance
+   screens, for example by loading the two one-click examples in a private window and reading the mode
+   badge. Until that is done, the deployed instance is unverified however green the build was.
+
+## 7. Delivery strategy: three tiers, and what each one is worth
 
 | Tier | What runs live | What the submission can claim |
 | --- | --- | --- |
 | **A — three endpoints live** | Guard, Protect, Inspect all return real Clocked results in the demo | The full claim: "screens untrusted content with three Clocked detections". This is the target. |
-| **B — one or two endpoints live, the rest explicitly unavailable** | e.g. Guard + Protect live, Inspect shown as unavailable with the reason | A narrower but true claim. The interface must say *which* detection is live, per stage, and the decision must degrade to REVIEW when a required stage is missing — which it already does by construction. |
-| **C — simulated only** | nothing | **Not a completed submission.** It demonstrates the workflow and the policy engine, and the recorded live fixtures prove the integration was built against real responses, but "we call the Clocked API" cannot be said about the running demo. This is a fallback for a deadline, not a goal. |
+| **B — one or two endpoints live, the rest explicitly unavailable** | e.g. Guard + Protect live, Inspect shown as unavailable with the reason | A narrower but true claim. The interface says which detection is live per stage, and an incomplete run reports `Screening unavailable — manual review required` rather than a verdict. |
+| **C — simulated only** | nothing | **Not a completed submission.** It demonstrates the workflow, the masking and the policy engine, and the committed fixtures prove the integration was built against real responses, but "we call the Clocked API at runtime" cannot be said about the running demo. This is a fallback for a deadline, not a goal. |
 
-The product supports all three without code changes: `CLOCKED_MODE` decides the transport, and every
-stage carries its own `mode`, so a partial deployment is representable — a live Guard card next to a
-failed Protect card with the real error is exactly what the interface is built to show. What it will not
-do is pretend: there is no code path that substitutes a simulated result for a failed live one.
+The product supports all three without code changes: `CLOCKED_MODE` decides the transport, every stage
+carries its own `mode`, and the incomplete case has its own visible state. What it will not do is pretend:
+there is no code path that substitutes a simulated result for a failed live one, and none that turns
+"screening unavailable" into PASS.

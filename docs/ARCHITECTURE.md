@@ -19,7 +19,8 @@ that touches a secret, a third-party API or a decision lives on the server.
 │  Server (Node runtime)                                                  │
 │                                                                         │
 │  app/api/analyze/route.ts                                               │
-│    rate limit → validate → pipeline → audit                             │
+│    origin → body cap → admission → validate → pipeline → audit          │
+│    guards: lib/origin.ts (same-origin) · lib/admission.ts (3-layer)     │
 │  app/api/audit/route.ts   GET — last 10 content-free records            │
 │  app/api/review/route.ts  POST — human decision, internal state only    │
 │                                                                         │
@@ -46,20 +47,35 @@ that touches a secret, a third-party API or a decision lives on the server.
 
 ## 1. Request lifecycle
 
-1. **Validate** (`lib/validate.ts`): body is JSON, `text` non-empty, no null bytes, length under the
+1. **Origin** (`lib/origin.ts`): the handler's first statement. A request with no `Origin` header is
+   accepted (same-origin `fetch` from some clients omits it); `Origin: null` is refused; otherwise the
+   origin must match the app or the host the request arrived on (`x-forwarded-host`), or appear in
+   `ALLOWED_ORIGINS` for a proxy setup. Refusal is `403 cross_origin_blocked` with **no** CORS header —
+   the endpoint is not a public API.
+2. **Body cap** (`LIMITS.maxBodyBytes`, 512 KB): checked against `content-length` before reading, and again
+   against the bytes actually read, because a chunked body declares nothing. `413` before parsing.
+3. **Admission** (`lib/admission.ts`): three layers, in this order — a per-caller fixed window (20 per
+   5 minutes), a per-caller concurrency slot (2 in flight), and a whole-deployment daily ceiling
+   (60 live / 240 simulated). Each refusal is `429` with a different message and `Retry-After`, because
+   "slow down", "you already have one running" and "the demo is out of budget for today" are different
+   instructions to a user.
+4. **Validate** (`lib/validate.ts`): body is JSON, `text` non-empty, no null bytes, length under the
    content-type limit (16k prose / 32k script — both well under the 60k/200k API caps), `instructions`
    under 2k, unknown fields dropped.
-2. **Rate limit** (`lib/ratelimit.ts`): fixed window per caller, 20 screens per 5 minutes by default.
-3. **Detect** (`lib/pipeline.ts`): Guard and Protect always run in parallel; Inspect runs only for
+5. **Detect** (`lib/pipeline.ts`): Guard and Protect always run in parallel; Inspect runs only for
    `contentType === 'script'` and is otherwise reported as `skipped` with a reason.
-4. **Mask** (`lib/redact.ts`): a masked copy is rebuilt from the Protect spans, independently of
+6. **Mask** (`lib/redact.ts`): a masked copy is rebuilt from the Protect spans, independently of
    whatever text the API returned.
-5. **Decide** (`lib/policy.ts`): a pure function over the three stage results plus the redaction
+7. **Decide** (`lib/policy.ts`): a pure function over the three stage results plus the redaction
    report. No I/O, no randomness, no model.
-6. **Audit** (`lib/audit.ts`): a content-free record — SHA-256 prefix, length, decision, stage statuses,
+8. **Audit** (`lib/audit.ts`): a content-free record — SHA-256 prefix, length, decision, stage statuses,
    entity count, duration.
-7. **Respond** with an `AnalyzeResponse` that carries, for every stage, its `mode`, `status`,
-   `latencyMs`, `attempts`, `credits` and endpoint path.
+9. **Respond** with an `AnalyzeResponse` that carries, for every stage, its `mode`, `status`,
+   `latencyMs`, `attempts`, `credits` and endpoint path, plus `X-RateLimit-*` and `X-Daily-Remaining`
+   so the client can say how much budget is left without asking a second endpoint.
+
+The concurrency slot is released in a `finally` block, so a failed detection cannot leak the slot and lock
+a caller out of the demo until the process restarts.
 
 ## 2. Why the decision is separate from the detection
 
@@ -84,6 +100,18 @@ REVIEW if any required stage is not 'ok'            (degradation, never PASS)
 
 PASS   otherwise
 ```
+
+A REVIEW has two meanings and the response must not blur them, so the outcome carries `screening` as well
+as `decision`:
+
+| `screening` | Meaning | Headline | What the UI does |
+| --- | --- | --- | --- |
+| `complete` | every required detection answered; a human is needed because of what the content *is* | `Hold at the human checkpoint before the agent reads it.` | amber `REVIEW` badge, reasons and actions |
+| `unavailable` | a required detection returned nothing, so part of the content was never assessed | `Screening unavailable — manual review required.` | `Unavailable` badge, "no risk verdict / held for a human", and the failed stage explains what it did not return |
+
+`unavailable` is never PASS, and it is never MOCK-filled: there is no code path that substitutes a simulated
+result for a failed live one. When the API is unreachable the run says so, the exported sheet says so, and
+the forwarded copy is withheld.
 
 Thresholds are configurable through `POLICY_BLOCK_INJECTION`, `POLICY_BLOCK_SCRIPT` and
 `POLICY_REVIEW_ENTITY_COUNT`; the resolved values are echoed in the response and printed in the report,
@@ -119,7 +147,8 @@ drop or duplicate characters.
 
 - subject: run id, content type, length, word count, SHA-256 prefix, case title, timestamp;
 - screening: one row per endpoint with status, verdict, probability, threshold, category, latency, error;
-- decision: outcome, headline, degraded flag, resolved thresholds, reasons, actions;
+- decision: outcome, headline, `screening` (`complete` / `unavailable`), degraded flag, resolved thresholds,
+  reasons, actions;
 - protection: counts, kinds, the masked copy, applied spans with offsets, dropped/rejected counts;
 - review: action, time, before/after decision, note, actor;
 - data sources and disclaimers that name the transport (`LIVE` / `MOCK`).
@@ -128,7 +157,18 @@ Evidence quotes that overlap a personal-data span are replaced with
 `[withheld: overlaps a personal-data finding]`. Entity values are never included. `scripts` verify both
 properties.
 
-## 6. Runtime and dependencies
+## 6. What the browser is allowed to know
+
+| Question | Answer in code |
+| --- | --- |
+| Where is the key? | Only in the server process. `lib/config.ts` throws if it is ever evaluated with a `window` object, `tests/harness-hygiene.test.ts` asserts that no client component imports it and that the key is read in exactly two files. |
+| What can the client learn about it? | `GET /api/status` returns `mode`, a `configuredKey` boolean and the limits. Never the value, never a prefix, never a length. |
+| What does a failure say? | `400` for input, `403` for origin, `413` for size, `429` for admission, `503` for a misconfigured deployment (with the variable name, which is operator information and not secret), `500 pipeline_failure` with a generic message. An internal message can name a host, a header or a stack frame, so it is not included. |
+| Can another page call the endpoint? | Not usefully: no `Access-Control-Allow-Origin` is ever emitted, and a foreign `Origin` is refused outright. |
+| What happens to a slow run? | Each `screen()` takes a monotonic sequence number; a response whose number is no longer current is discarded, so an earlier run that finishes late cannot overwrite a newer decision. Cancelling aborts the fetch and releases the slot server-side. |
+| Does the content persist? | No. It lives in React state for the session; there is no `localStorage`, no `sessionStorage`, no cookie, and the audit record is content-free by construction. |
+
+## 7. Runtime and dependencies
 
 | Concern | Choice |
 | --- | --- |
@@ -137,7 +177,11 @@ properties.
 | Styling | Tailwind CSS 4 with a small custom design system |
 | Clocked | `clocked-sdk@0.7.0` (server only, `serverExternalPackages`) |
 | Tests | vitest 5 (pure logic), Playwright 1.64 (browser) |
+| Abuse control | in-memory maps in `lib/admission.ts` and `lib/ratelimit.ts` — correct for one process, not for a fleet |
 | Icons | hand-written inline SVG — no icon dependency |
 
 No database, no auth, no external font fetch, no telemetry. The deployment is stateless except for the
-in-memory rate-limit and audit maps.
+in-memory admission window, the audit ring buffer and the review notes, all of which reset when the process
+restarts. A multi-instance deployment needs a shared limiter in front — the per-IP window and the
+per-caller concurrency slot would otherwise be multiplied by the instance count.
+

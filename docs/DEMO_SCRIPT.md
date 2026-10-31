@@ -1,101 +1,126 @@
-# Demo script
+# Demo script — 100 seconds
 
-Target length **2:30**. Screen recording of the running app, no slides, no talking head required.
-Every claim spoken here is visible on screen at the same moment.
+Target length **1:40 (100 seconds)**, inside the 90–120 second range. The official rules ask for
+"a short video of the application in use" and set no length; 100 seconds is long enough to show the
+composition of three endpoints and short enough that a judge watches it to the end.
+
+Screen recording of the running application. No slides, no talking head. **Every claim spoken here is
+visible on screen at the same moment.**
 
 ---
 
 ## Before you record
 
-- [ ] `npm run build && npm start` (production build — no dev overlay), or the deployed URL
-- [ ] **Live mode** if a key is available; otherwise mock mode is fine **but the banner must be visible
-      on screen** and scene 1 acknowledges it. Never crop the banner out.
-- [ ] Browser at 1440×900, 100% zoom, no bookmarks bar, no other tabs
-- [ ] Clear the input first so the hero and the idle state are visible at the start
-- [ ] Close any notification toasts; do not show the `.env.local` file
-- [ ] Record at 1080p/30 or better; capture system audio off, voice-over added in edit
+- [ ] `npm run build && npm start` (production build, no dev overlay) or the deployed URL
+- [ ] Open in a clean browser window at 1440×900, 100% zoom, no bookmarks bar, no other tabs
+- [ ] Decide the mode before you start, and do not mix modes in one take:
+      **live** if `CLOCKED_MODE=live` returns real detections; otherwise **mock**, with the
+      `DEMO · SIMULATED RESULTS` banner visible in every frame
+- [ ] Never crop the banner out, never hide the mode pill, never say "live" over a simulated run
+- [ ] Close notifications, and never show `.env.local`, a terminal with the key, or a DevTools network tab
+- [ ] Record at 1920×1080 / 30 fps or better; system audio off, voice-over added in the edit
+- [ ] Keep the mouse still while speaking; move it only to the thing being described
 
-## Scene 1 — The problem (0:00–0:15)
+## Scene 1 — The problem (0:00–0:10)
 
-**On screen:** the workbench, idle. Cursor rests near the left rail.
+**On screen:** the idle workbench. Cursor still.
 
-> "An AI agent reads a support ticket. It cannot tell the difference between a customer asking for help
-> and someone telling it to ignore its instructions. TrustRoute is the checkpoint in front of that agent."
+> "An agent reads a support ticket and cannot tell a customer asking for help from someone telling it to
+> ignore its instructions. TrustRoute is the checkpoint in front of that agent."
 
-*If mock mode:* "This is running without an API key, so the detections are a labelled simulation — the
-policy, masking and review are exactly the same code."
+*If mock:* add one sentence, once: *"This take runs without an API key, so the detections are a labelled
+simulation — the masking, the policy and the review are the same code that runs live."*
 
-## Scene 2 — A ticket that must not reach the agent (0:15–0:55)
+## Scene 2 — Block an injection (0:10–0:35)
 
-**On screen:** click *Classic prompt injection* → **Screen content**.
+**On screen:** click **Screen the blocked example** (one click, from the landing state).
 
-Wait for the result, then move the cursor down the three regions as you speak.
+> "One click runs all three Clocked checks. Guard scores this at ninety-five percent injection, severity
+> critical — instruction override. Protect found an email in the body and masked it. Policy blocks: this
+> never reaches the agent, and the reason is on screen rather than in a log."
 
-> "One click. Clocked Guard scores it at ninety-five percent injection — instruction override, severity
-> critical. Protect already found an email address in the body and masked it. The policy blocks: this
-> content never reaches the agent, and the reason is on screen, not in a log."
+Click one evidence passage; the source view jumps to the highlighted span.
 
-Point at the highlighted span in the source view, then at the Evidence list directly under it — one
-click on a passage selects it in the source above.
+> "Every passage Guard returned is a real offset in this text. Click it and you are looking at the line
+> that was scored."
 
-## Scene 3 — Personal data: mask, then forward (0:55–1:25)
+## Scene 3 — Mask, then forward (0:35–1:00)
 
-**On screen:** click *Ticket with personal data* → **Screen content** → switch to *Forwarded copy*.
+**On screen:** click *Ticket with personal data* → **Screen content** → **Forwarded copy**.
 
-> "Nothing malicious here — but the agent has no business seeing a phone number or an address. Protect
-> returns four entities with positions; TrustRoute rebuilds the copy from those spans and shows exactly
-> what would be forwarded. This one passes, because masking was possible and nothing was above the block
-> line."
+> "Nothing malicious here, but the agent has no business seeing a phone number or a card. Protect returns
+> typed entities with positions; TrustRoute rebuilds the forwarded copy from those spans and shows exactly
+> what would leave the gateway."
 
-Toggle to *As received* and back, so the before/after is visible, and point at the mask-map chips
-(`email → <EMAIL> ×1`) — clicking one jumps back to the exact span it replaced.
+Click a mask-map chip (`email → <EMAIL> ×1`); the view returns to the replaced span.
 
-## Scene 4 — The interesting case: a script a human should see (1:25–2:00)
+> "Each placeholder is traceable back to the value it replaced. This run passes, because masking was
+> possible and nothing crossed the block line."
+
+## Scene 4 — The case a human should see (1:00–1:20)
 
 **On screen:** click *Script needing review* → **Screen content**.
 
-> "Inspect is static — the script is never executed. It flags the unsigned download and the recursive
-> delete, at seventy percent malicious. Below the block line, above the review line: a human decides.
-> Approve, and the internal state changes — nothing is run, nothing is sent."
+> "Inspect is static analysis — the script is never executed. It flags the unsigned download and the
+> recursive delete: above the review line, below the block line. So a person decides."
 
-Click **Approve**, let the "reviewer override" line appear.
+Click **Approve**; the band changes to the reviewer's decision.
 
-## Scene 5 — The artefact (2:00–2:25)
+> "Approval changes an internal routing state. Nothing is run, nothing is sent."
 
-**On screen:** click **Review sheet**, scroll slowly through the sheet, then close it and click
-**JSON report** to trigger the download.
+## Scene 5 — The artefact (1:20–1:35)
 
-> "Every screen produces an export a reviewer can defend: the hashed subject, each endpoint's verdict,
-> the thresholds this policy used, the reasons, the decision, who reviewed it. No raw text, no personal
-> data, no API key."
+**On screen:** click **JSON report** to download, then **Review sheet** and scroll one screen.
 
-## Scene 6 — Close (2:25–2:30)
+> "Every screen produces an export a reviewer can defend: the hashed subject, each endpoint's verdict, the
+> thresholds this policy used, every comparison it made, and who approved it. No raw text, no personal
+> data, no key."
 
-**On screen:** back to the idle workbench, or the decision panel still showing.
+## Scene 6 — Close (1:35–1:40)
+
+**On screen:** the decision panel, `BLOCK` or the review state.
 
 > "Three Clocked endpoints, one decision, and a failure never becomes a pass. TrustRoute."
 
 ---
 
+## The alternate scene, if the live path is refused
+
+If `npm run accept:live` returns `403 cf-mitigated: challenge` on the recording machine, record the mock
+take and add **one** shot at 1:35 — a live-mode run of the same case, showing:
+
+> "On this machine the service edge challenges non-browser clients before authentication, so the live
+> screen is refused rather than answered. TrustRoute reports that as screening unavailable and holds the
+> content — it does not fall back to the simulator, and it does not call the run a verdict."
+
+Then hold on `Screening unavailable — manual review required` for two seconds. This is a legitimate part of
+the product, and it is more convincing than a green check mark that the demo cannot actually produce. The
+frame to aim for is `docs/screenshots/screening-unavailable.png` — the `Unavailable` badge, "no risk verdict
+/ held for a human", and both stages reporting `Request failed · edge_interstitial`.
+
 ## Delivery notes
 
-- Speak at ~140 words per minute; the script above is ~330 words, so leave room for clicks and pauses.
-- Do not narrate loading spinners. Cut dead time in the edit; keep the state transitions.
+- ~150 words per minute. The narration above is ~260 words — leave the rest for clicks and pauses.
+- Do not narrate spinners. Cut dead time in the edit but keep the state transitions, including the
+  loading state: it shows the product is doing real work.
 - Never say "our AI decides". The distinction *is* the product: detections are model output, the decision
-  is policy.
-- If a live run is unavailable, say so once, plainly, in scene 1. Judges score honesty and reproducibility
-  higher than a perfect demo.
+  is policy, and the rule trace shows which comparison produced it.
+- Never call a simulated number a Clocked verdict. If the take is mock, say "simulation" once in scene 1
+  and let the banner carry the rest.
 
 ## Shot list
 
 | # | Time | Action | Must be legible |
 | --- | --- | --- | --- |
-| 1 | 0:00 | idle workbench | H1, mock/live badge, case rail |
-| 2 | 0:15 | *Screen the blocked example* (single click) | BLOCK badge, 95.8% injection, evidence passages |
-| 3 | 0:55 | load case 2, screen, forwarded copy | `<PERSON>`, `<PHONE>`, `<EMAIL>`, `<ADDRESS>` |
-| 4 | 1:25 | load case 6, screen, approve | REVIEW badge, flagged lines, override note |
-| 5 | 2:00 | open review sheet, then export JSON | report rows, thresholds, disclaimers |
-| 6 | 2:25 | close | product name |
+| 1 | 0:00 | idle workbench | H1, mode pill, case rail |
+| 2 | 0:10 | *Screen the blocked example* | BLOCK badge, injection %, evidence list |
+| 3 | 0:18 | click an evidence passage | highlight in the source view, `L<n>` in the row |
+| 4 | 0:35 | PII case → Forwarded copy | `<PERSON>`, `<PHONE>`, `<EMAIL>`, `<CARD>` |
+| 5 | 0:48 | click a mask-map chip | returns to *As received*, span outlined |
+| 6 | 1:00 | script case | REVIEW badge, malicious %, flagged lines |
+| 7 | 1:12 | Approve | reviewer override, "nothing was executed" |
+| 8 | 1:20 | JSON report + review sheet | thresholds, checks, disclaimers |
+| 9 | 1:35 | close | product name |
 
 ## If a judge asks for a 30-second version
 

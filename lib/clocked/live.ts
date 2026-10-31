@@ -27,6 +27,25 @@ import { normalizeGuard, normalizeInspect, normalizeProtect } from './normalize'
 
 let client: Clocked | null = null;
 
+/**
+ * The SDK's defaults are the documented ones. These two overrides exist because
+ * the transport, not the product, is what an operator may need to adjust: a
+ * deployment behind a corporate proxy or talking to a different endpoint root
+ * should not require a code change — and must never require weakening the app.
+ */
+function endpointRoot(): string | undefined {
+  const configured = process.env.CLOCKED_BASE_URL?.trim();
+  return configured && configured.length > 0 ? configured : undefined;
+}
+
+function attemptTimeout(): number {
+  const configured = Number(process.env.CLOCKED_TIMEOUT_MS);
+  if (!Number.isFinite(configured)) return 30_000;
+  // The gateway allows the model 110s; below 5s a real call cannot finish, and
+  // above 120s the request outlives the route handler's budget.
+  return Math.min(120_000, Math.max(5_000, Math.trunc(configured)));
+}
+
 function getClient(): Clocked {
   if (!hasApiKey()) {
     throw new ConfigurationError('CLOCKED_API_KEY is not set, so live screening is unavailable.');
@@ -34,9 +53,10 @@ function getClient(): Clocked {
   if (!client) {
     client = new Clocked({
       apiKey: process.env.CLOCKED_API_KEY,
-      // The gateway allows the model 110s; a demo does not benefit from waiting
-      // that long, and a fast, explicit failure is a better safety default.
-      timeout: 30_000,
+      baseUrl: endpointRoot(),
+      // A demo does not benefit from waiting the model's full 110s; a fast,
+      // explicit failure is a better safety default.
+      timeout: attemptTimeout(),
       maxAttempts: 2,
       retryBaseDelay: 400,
       retryMaxDelay: 3_000,

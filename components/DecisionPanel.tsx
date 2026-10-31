@@ -6,7 +6,7 @@ import type { AnalyzeResponse, PolicyCheckOutcome, ReviewEvent } from '@/lib/typ
 import { MIN_REJECT_NOTE, REVIEW_NOTE_MAX } from '@/lib/review';
 import { clockTime, ms, pct } from '@/lib/format';
 import { creditsValue } from '@/lib/copy';
-import { DECISION_STYLE, DecisionBadge, Divider } from '@/components/ui';
+import { DECISION_STYLE, DecisionBadge, Divider, UnavailableBadge } from '@/components/ui';
 import { AlertIcon, CheckIcon, ClockIcon, DownloadIcon, InfoIcon, PrintIcon, RefreshIcon, ShieldIcon, XIcon } from '@/components/icons';
 
 const REASON_TONE: Record<'block' | 'review' | 'info', string> = {
@@ -58,7 +58,7 @@ function IdleExplanation() {
             },
             {
               decision: 'REVIEW' as const,
-              text: 'Ambiguous signal, high-sensitivity personal data, or a detection that did not complete. A human decides.',
+              text: 'Ambiguous signal, or high-sensitivity personal data. A human decides before anything moves.',
             },
             {
               decision: 'BLOCK' as const,
@@ -70,6 +70,13 @@ function IdleExplanation() {
               <p className="pt-1 text-[12px] leading-relaxed text-fg-2">{item.text}</p>
             </div>
           ))}
+          <div className="flex gap-2.5">
+            <UnavailableBadge />
+            <p className="pt-1 text-[12px] leading-relaxed text-fg-2">
+              <span className="font-medium text-fg">Screening unavailable.</span> A required detection returned no
+              result, so no risk verdict exists — the content is held for manual review.
+            </p>
+          </div>
         </div>
 
         <div className="inset px-3 py-2.5">
@@ -124,6 +131,10 @@ export function DecisionPanel({
       : 'Rejected by a reviewer. The content stays inside TrustRoute.'
     : policy.headline;
   const blockingChecks = policy.checks.filter((item) => item.outcome === 'block' || item.outcome === 'failed').length;
+  // No detection completed, so there is no verdict to show. The decision is
+  // still REVIEW — a person must look — but presenting it as a finding would
+  // tell the reader something the run never established.
+  const unavailable = policy.screening === 'unavailable';
 
   return (
     <div className="panel overflow-hidden">
@@ -143,22 +154,30 @@ export function DecisionPanel({
         role="status"
         aria-live="polite"
         aria-atomic="true"
-        aria-label={`Screening decision: ${effectiveDecision}`}
+        aria-label={`Screening decision: ${unavailable ? 'screening unavailable, manual review required' : effectiveDecision}`}
+        data-screening={policy.screening}
       >
         <div className="flex items-center justify-between gap-2">
           <span data-testid="decision-badge">
-            <DecisionBadge decision={effectiveDecision} large />
+            {unavailable && !overridden ? <UnavailableBadge large /> : <DecisionBadge decision={effectiveDecision} large />}
           </span>
           {overridden ? (
             <span className="text-right text-[10.5px] font-medium text-fg-2">
               reviewer override
               <span className="block text-fg-3">policy said {policy.decision}</span>
             </span>
+          ) : unavailable ? (
+            <span className="text-right text-[10.5px] font-medium text-review">
+              no risk verdict
+              <span className="block text-fg-3">held for a human</span>
+            </span>
           ) : (
             <span className="text-[10.5px] text-fg-3">server policy</span>
           )}
         </div>
-        <p className={`mt-2.5 text-[13.5px] font-medium leading-snug ${style.text}`}>{headline}</p>
+        <p className={`mt-2.5 text-[13.5px] font-medium leading-snug ${unavailable && !overridden ? 'text-[#f0c48a]' : style.text}`}>
+          {headline}
+        </p>
       </div>
 
       <div className="space-y-3 px-3.5 py-3">
@@ -166,8 +185,8 @@ export function DecisionPanel({
           <div className="flex gap-2 rounded-md border border-[#6b5320] bg-[#221a0d] px-2.5 py-2">
             <AlertIcon size={13} className="mt-0.5 shrink-0 text-review" />
             <p className="text-[11.5px] leading-relaxed text-[#f0c48a]">
-              Screening was incomplete. This decision exists because a detection failed — not because anything was
-              found safe.
+              Screening was unavailable: a required detection returned no result, so nothing was assessed on that
+              dimension. The REVIEW state exists because the content is unscreened — not because anything was found.
             </p>
           </div>
         ) : null}

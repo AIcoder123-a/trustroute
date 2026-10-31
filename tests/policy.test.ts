@@ -234,3 +234,43 @@ describe('policy engine', () => {
     expect(lenient.decision).toBe('REVIEW');
   });
 });
+
+describe('screening state', () => {
+  const UNAVAILABLE = 'Screening unavailable — manual review required.';
+
+  it('reports an incomplete run as unavailable, not as a risk finding', () => {
+    const outcome = evaluate({ guard: guardStage({}, 'timeout') });
+    expect(outcome.decision).toBe('REVIEW');
+    expect(outcome.screening).toBe('unavailable');
+    expect(outcome.headline).toBe(UNAVAILABLE);
+    // "Hold for review" would read as if a detector had found something.
+    expect(outcome.headline).not.toMatch(/hold at the human checkpoint/i);
+  });
+
+  it('never calls a complete run unavailable', () => {
+    const outcome = evaluate({});
+    expect(outcome.screening).toBe('complete');
+    expect(outcome.headline).toBe('Safe to forward.');
+  });
+
+  it('keeps a real block as a verdict even when another stage failed', () => {
+    const outcome = evaluate({
+      protect: protectStage([], 'error'),
+      guard: guardStage({ injection: 0.94, verdict: 'injection', severity: 'critical' }),
+    });
+    expect(outcome.decision).toBe('BLOCK');
+    expect(outcome.screening).toBe('complete');
+    expect(outcome.headline).toMatch(/Do not forward/);
+  });
+
+  it('records completeness in the trace so the reason is visible', () => {
+    const outcome = evaluate({ protect: protectStage([], 'quota') });
+    const completeness = outcome.checks.find((item) => item.id === 'screening_complete');
+    expect(completeness?.outcome).toBe('failed');
+  });
+
+  it('tells the reviewer not to read the run as a verdict', () => {
+    const outcome = evaluate({ protect: protectStage([], 'quota') });
+    expect(outcome.actions.join(' ')).toMatch(/not treat this run as a risk verdict/i);
+  });
+});

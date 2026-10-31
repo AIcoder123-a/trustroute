@@ -2,6 +2,82 @@ import { expect, test } from '@playwright/test';
 
 import { readFileSync } from 'node:fs';
 
+import type { AnalyzeResponse } from '@/lib/types';
+
+const UNAVAILABLE_HEADLINE = 'Screening unavailable — manual review required.';
+
+/**
+ * Let the real request run, then alter the answer before the page sees it.
+ * The mutation is exactly what the policy engine produces when Protect fails,
+ * so the test exercises the UI's handling of an incomplete run rather than a
+ * hand-written fixture that could drift from the server contract.
+ */
+async function patchAnalyze(page: import('@playwright/test').Page, mutate: (body: AnalyzeResponse) => void) {
+  await page.route('**/api/analyze', async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as AnalyzeResponse;
+    mutate(body);
+    await route.fulfill({ response, json: body });
+  });
+}
+
+function failProtect(body: AnalyzeResponse) {
+  body.stages.protect = {
+    ...body.stages.protect,
+    status: 'quota',
+    data: null,
+    credits: null,
+    error: {
+      code: 'insufficient_credits',
+      message: 'The Clocked account is out of credits for this request.',
+      retryable: false,
+      httpStatus: 402,
+    },
+  };
+  body.redaction = {
+    maskedText: null,
+    applied: [],
+    dropped: [],
+    rejected: [],
+    apiComparison: 'absent',
+    totalEntities: 0,
+  };
+  body.policy = {
+    ...body.policy,
+    decision: 'REVIEW',
+    screening: 'unavailable',
+    degraded: true,
+    headline: UNAVAILABLE_HEADLINE,
+    requiresHumanReview: true,
+    canForwardMasked: false,
+    reasons: [
+      {
+        code: 'detection_incomplete',
+        label: 'Protect (PII) did not complete',
+        detail: 'The Clocked account is out of credits for this request. TrustRoute does not release content that was not fully screened.',
+        severity: 'review',
+        source: 'pipeline',
+      },
+    ],
+    actions: [
+      'Do not treat this run as a risk verdict: at least one required detection returned no result.',
+      'Re-run the failed detection, or screen the content somewhere that can reach the API.',
+      'Until then, a reviewer must read the content itself before anything is released.',
+    ],
+    checks: [
+      ...body.policy.checks.filter((check) => check.id !== 'screening_complete'),
+      {
+        id: 'screening_complete',
+        label: 'Required detections completed',
+        observed: 'at least one did not complete',
+        threshold: 'all required',
+        outcome: 'failed',
+        source: 'pipeline',
+      },
+    ],
+  };
+}
+
 const CASES = {
   safe: 'Routine support ticket',
   pii: 'Ticket with personal data',
@@ -223,6 +299,103 @@ test.describe('TrustRoute workbench', () => {
     await expect(bar).toBeVisible();
     await page.getByRole('link', { name: 'Why' }).click();
     await expect(page).toHaveURL(/#decision$/);
+  });
+
+  test('says screening is unavailable instead of reporting a verdict', async ({ page }) => {
+    await page.goto('/');
+    await patchAnalyze(page, failProtect);
+    await loadAndScreen(page, CASES.pii);
+
+    // Not a decision: the badge says there is no verdict.
+    await expect(page.getByTestId('decision-badge')).toContainText('Unavailable');
+    await expect(page.getByTestId('decision-badge')).not.toContainText('REVIEW');
+    await expect(page.getByRole('status', { name: /Screening decision/ })).toContainText(UNAVAILABLE_HEADLINE);
+    await expect(page.getByText(/no risk verdict/i)).toBeVisible();
+
+    // The failed stage explains the consequence, not just the error.
+    await expect(page.getByText('Credit / concurrency limit').first()).toBeVisible();
+    await expect(page.getByText(/contributed nothing.*screening unavailable/i).first()).toBeVisible();
+
+    // And the forwarded copy cannot be mistaken for a masked one.
+    await page.getByRole('tab', { name: 'Forwarded copy' }).click();
+    await expect(page.getByText(/Protect did not complete, so nothing was masked/)).toBeVisible();
+  });
+
+  test('exports an incomplete run as incomplete, not as a risk assessment', async ({ page }) => {
+    await page.goto('/');
+    await patchAnalyze(page, failProtect);
+    await loadAndScreen(page, CASES.pii);
+
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.getByRole('button', { name: /JSON report/ }).click(),
+    ]);
+    const raw = readFileSync(await download.path(), 'utf8');
+    const report = JSON.parse(raw) as {
+      decision: { decision: string; screening: string; degraded: boolean };
+      disclaimers: string[];
+    };
+
+    expect(report.decision.screening).toBe('unavailable');
+    expect(report.decision.degraded).toBe(true);
+    expect(report.decision.decision).toBe('REVIEW');
+    expect(report.disclaimers.join(' ')).toMatch(/not a risk assessment/i);
+  });
+
+  test('reports an unavailable service rather than inventing a decision', async ({ page }) => {
+    await page.goto('/');
+    await page.route('**/api/analyze', (route) =>
+      route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          error: 'not_configured',
+          message: 'CLOCKED_MODE=live but CLOCKED_API_KEY is missing.',
+          hint: 'Set CLOCKED_API_KEY to screen real content.',
+        }),
+      }),
+    );
+    await caseButton(page, CASES.safe).click();
+    await page.getByRole('button', { name: /Screen content/ }).click();
+
+    await expect(page.getByRole('alert').filter({ hasText: 'Screening unavailable' })).toBeVisible();
+    await expect(page.getByTestId('decision-badge')).toHaveCount(0);
+  });
+
+  test('cancels a slow screen without leaving a decision behind', async ({ page }) => {
+    await page.goto('/');
+    let requests = 0;
+    page.on('request', (request) => {
+      if (request.url().includes('/api/analyze')) requests += 1;
+    });
+    await page.route('**/api/analyze', async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 10_000));
+      try {
+        await route.abort('failed');
+      } catch {
+        // The page cancelled first, which is the point of the test.
+      }
+    });
+    await caseButton(page, CASES.safe).click();
+    await page.getByRole('button', { name: /Screen content/ }).click();
+
+    // Cancel only exists while a screen is in flight — so its presence is the
+    // assertion that the button really entered the loading state.
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    await expect(page.getByText(/Screening cancelled before a decision/)).toBeVisible();
+    await expect(page.getByTestId('decision-badge')).toHaveCount(0);
+    expect(requests).toBe(1);
+  });
+
+  test('shows the unavailable state above the results on a narrow screen', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'mobile', 'narrow-screen only');
+    await page.goto('/');
+    await patchAnalyze(page, failProtect);
+    await loadAndScreen(page, CASES.pii);
+
+    const bar = page.locator('[data-screening="unavailable"]').first();
+    await expect(bar).toContainText(UNAVAILABLE_HEADLINE);
+    await expect(bar.getByRole('link', { name: 'Why' })).toBeVisible();
   });
 
   test('reports a failed request instead of a decision', async ({ page }) => {

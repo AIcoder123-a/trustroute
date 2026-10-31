@@ -29,6 +29,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Nothing in this job pushes; keep the token out of .git/config.
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -41,10 +44,21 @@ jobs:
       - name: Ask Clocked for three detections
         env:
           CLOCKED_API_KEY: ${{ secrets.CLOCKED_API_KEY }}
-        run: npm run verify:live
+        # The script prints status, shape, verdict and source; it never prints
+        # the key, the request text or an entity value.
+        run: npm run accept:live
+
+      - name: Keep the acceptance record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-acceptance
+          path: .local/live-acceptance.json
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Explain a failure
         if: failure()
         run: |
-          echo "::notice::If the output is 403 with cf-mitigated: challenge, the rule is not about the"
-          echo "::notice::build machine's network — see docs/DEPLOYMENT.md §3, row 2."
+          echo "::notice::If the output is 403 with cf-mitigated: challenge, this egress is challenged too."
+          echo "::notice::Record the cf-ray and compare it with docs/DEPLOYMENT.md §3 before drawing a conclusion."

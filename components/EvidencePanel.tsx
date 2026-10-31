@@ -44,6 +44,10 @@ export function EvidencePanel({
   });
   const badge = evidenceBadge(result.mode);
   const entityCount = result.stages.protect.data?.entities.length ?? 0;
+  const failedDetectors = [
+    result.stages.guard.status !== 'ok' ? 'Guard' : null,
+    result.stages.inspect.status !== 'ok' && result.stages.inspect.status !== 'skipped' ? 'Inspect' : null,
+  ].filter((name): name is string => name !== null);
 
   if (rows.length === 0) {
     return (
@@ -53,11 +57,13 @@ export function EvidencePanel({
           <span className="mono text-[10.5px] text-fg-3">0 passages</span>
         </header>
         <p className="border-t border-line px-3.5 py-2.5 text-[12px] leading-relaxed text-fg-3">
-          {entityCount > 0
-            ? `Neither Guard nor Inspect returned a passage. The ${entityCount} personal-data finding${
-                entityCount === 1 ? '' : 's'
-              } this run masked are listed under Protect, and the forwarded copy above shows what replaced them.`
-            : 'Neither detector returned a passage for this content. That is not proof of safety — a detector can miss phrasing it has not seen, which is why the decision is not the detector’s to make.'}
+          {failedDetectors.length > 0
+            ? `No evidence to show: ${failedDetectors.join(' and ')} did not complete, so no passage was returned. This is an incomplete screening, not a clean result.`
+            : entityCount > 0
+              ? `Neither Guard nor Inspect returned a passage. The ${entityCount} personal-data finding${
+                  entityCount === 1 ? '' : 's'
+                } this run masked are listed under Protect, and the forwarded copy above shows what replaced them.`
+              : 'Neither detector returned a passage for this content. That is not proof of safety — a detector can miss phrasing it has not seen, which is why the decision is not the detector’s to make.'}
         </p>
       </section>
     );

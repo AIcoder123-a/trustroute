@@ -46,7 +46,7 @@ tests/                  vitest unit + integration
 tests/fixtures/         verbatim real responses recorded 2026-10-30 (synthetic samples only)
 e2e/                    playwright, desktop + mobile
 docs/                   rules, API research, architecture, test report, submission drafts
-scripts/live-smoke.mjs  one real call per endpoint through the SDK; use with a key
+scripts/live-acceptance.mjs  server-side acceptance: three real SDK calls, recorded with status, shape, verdict and source
 scripts/live-verify.mjs  the same three calls through Chromium; verification harness, never imported by app/
 scripts/collect-diagnostics.mjs  credential-free edge diagnostics for a provider escalation (output in .local/)
 .github/workflows/live-check.yml  manual-trigger run of verify:live on a GitHub runner, to test a cloud egress
@@ -82,7 +82,7 @@ npm run lint         # eslint (next/core-web-vitals + typescript)
 npm test             # vitest: policy, redaction, highlight, report, validation, rate limit, pipeline
 npm run test:e2e     # playwright desktop + mobile (starts its own server on :3100)
 npm run verify       # typecheck + lint + test + build
-npm run verify:live  # three real Clocked calls through the SDK; needs CLOCKED_API_KEY
+npm run verify:live  # server-side acceptance: three real Clocked calls through the SDK; needs CLOCKED_API_KEY
 npm run verify:live:browser  # the same calls through Chromium (see §6 on the edge challenge)
 node scripts/collect-diagnostics.mjs  # no credential; writes .local/support/ (git-ignored)
 ```

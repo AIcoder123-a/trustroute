@@ -12,6 +12,23 @@ if (typeof window !== 'undefined') {
 }
 
 const rateLimitOverride = Number(process.env.RATE_LIMIT_REQUESTS);
+const dailyOverride = Number(process.env.DAILY_SCREENS);
+
+/**
+ * The daily ceiling for a live deployment is not the same number as for a
+ * simulated one, because the cost is not the same: a live screen spends 12–19
+ * credits, so 240 a day would exhaust a 20,000-credit balance in about a week —
+ * inside the judging window. Simulated screens cost nothing and only need to
+ * stop obvious abuse.
+ */
+function defaultDailyScreens(): number {
+  try {
+    return resolveRunMode() === 'live' ? 60 : 240;
+  } catch {
+    // A misconfigured deployment answers 503 anyway; keep the stricter cap.
+    return 60;
+  }
+}
 
 export const LIMITS = {
   /** Accepted prose length. Well under the 60,000-character Protect/Guard cap. */
@@ -22,10 +39,19 @@ export const LIMITS = {
   instructionsCharacters: 2_000,
   /** Absolute ceiling any single request may ever send to Clocked. */
   hardApiCap: 60_000,
+  /** Largest request body the route will parse, before validation. */
+  maxBodyBytes: 512 * 1024,
   /** Client requests per window, per IP. Abuse control for the public demo. */
   requestsPerWindow:
     Number.isFinite(rateLimitOverride) && rateLimitOverride > 0 ? Math.trunc(rateLimitOverride) : 20,
   windowMs: 5 * 60 * 1000,
+  /**
+   * Whole-deployment ceiling per UTC day. This is the control that protects the
+   * account's credit balance: per-IP limits stop one visitor, not a hundred.
+   */
+  dailyScreens: Number.isFinite(dailyOverride) && dailyOverride > 0 ? Math.trunc(dailyOverride) : defaultDailyScreens(),
+  /** Screens one caller may have in flight at once. */
+  concurrentPerCaller: 2,
 } as const;
 
 export function maxCharactersFor(contentType: ContentType): number {

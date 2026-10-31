@@ -158,3 +158,45 @@ is a follow-up, listed rather than faked.
 This is a challenge entry, not a production service. If you find a vulnerability in TrustRoute, open an
 issue on the repository once it is public; do not test against any deployment with real data, because
 there should never be real data in it.
+
+## 11. Public demo hardening — audited 2026-10-31
+
+The question this section answers is not "is the code careful" but "if this URL is posted to a judging
+page, what can a stranger make it do?" Nine areas, each with what was found and what changed.
+
+| # | Area | Finding | Control now |
+| --- | --- | --- | --- |
+| 1 | Key handling | Read only inside route handlers; no `NEXT_PUBLIC_*` anywhere; `lib/config.ts` throws on import in a browser context | unchanged, and re-verified by `tests/harness-hygiene.test.ts` + `tests/report.test.ts` |
+| 2 | Request limits | Per-IP window existed; a body cap and a per-caller concurrency cap did not | 512 KB body cap before parsing (`413`), 2 concurrent screens per caller (`429`), 20 per 5-minute window, 16 k/32 k content caps |
+| 3 | Credit abuse | Per-IP limits do nothing against many IPs; a live screen costs 12–19 credits | whole-deployment daily ceiling, **60 in live mode, 240 in mock**, configurable; `X-Daily-Remaining` on every response |
+| 4 | CORS / origin | Any page could make a visitor's browser POST to `/api/analyze` and spend credits | `lib/origin.ts`: same-host or allow-listed `Origin` only, `Origin: null` refused, `403` otherwise. No `Access-Control-Allow-*` header is emitted at all, so a cross-origin page cannot read a response either |
+| 5 | Error leakage | The catch-all returned `error.message` from the pipeline | generic message; the internal detail stays on the server. `401`/`403`/`402`/`429` keep their own vocabulary so an operator can tell them apart |
+| 6 | PII in logs / exports / storage | No `console.*` in `app/`, `lib/` or `components/`; exports carry a hash, not text; audit records are content-free | verified by grep and by `tests/report.test.ts` and `tests/pipeline.test.ts`; the masked copy is the only content-shaped field in an export, and it is post-masking |
+| 7 | Cancel / double click / stale response | The button is disabled while a screen runs, but a cancelled run could still land after a second run started | monotonic request id in `components/Workbench.tsx`; a response only applies if it belongs to the newest request. Cancel aborts the fetch, records that nothing was screened, and produces no decision |
+| 8 | Unavailable vs review vs complete | A failed detection used to be shown as REVIEW, which reads as a finding | explicit `screening` state: badge *Unavailable*, headline `Screening unavailable — manual review required`, stage text "contributed nothing", no forwarded copy, `screening: "unavailable"` in the export, and a disclaimer |
+| 9 | GitHub Actions | `workflow_dispatch` only, `permissions: contents: read`, secret scoped to a single step | `persist-credentials: false` on checkout; the acceptance script prints no key; the artifact it uploads is the acceptance record, which is self-checked for the key before it is written |
+
+Notes on the choices:
+
+- **Why allow a request with no `Origin`?** A browser sends `Origin` on every cross-site POST, so refusing
+  its absence protects nothing a browser could exploit, while breaking `curl`, health checks and the
+  acceptance script. `Origin: null` *is* refused, because that is what a sandboxed frame or a `data:`
+  document reports.
+- **Why no CORS headers?** Same-origin use needs none. Omitting them means the browser blocks a cross-origin
+  *read* even if a request is sent — a second lock on the same door.
+- **Why a concurrency cap when the provider allows four?** A demo does not need parallelism, and a queue of
+  parallel screens is how a free account hits the provider's own limit and starts returning 429s to
+  everyone.
+- **Why the daily ceiling differs by mode?** Mock screens cost nothing, so a low cap would only make the
+  demo fail for a judge; live screens cost money, so the default is the smaller number. `lib/config.ts`
+  derives it from the resolved mode, and an explicit `DAILY_SCREENS` always wins.
+
+Still weak, and stated so it is not mistaken for solved:
+
+- The counters are per process. Two instances double the effective ceilings; a restart resets them.
+- There is no authentication. The daily ceiling and the origin check are the only things between a
+  stranger and the credit balance.
+- The rate limiter trusts `x-forwarded-for`, which a direct-to-origin request can forge. Behind a host that
+  sets it (Vercel, Cloudflare) that is the correct behaviour; exposed directly, it is not.
+- No CSRF token. The origin check is the control; it is sufficient for a JSON-only API with no cookie
+  session, which is what this is.

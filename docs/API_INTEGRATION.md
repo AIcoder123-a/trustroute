@@ -293,7 +293,66 @@ carries no `Authorization` header and no page script can read the credential. Th
 the first version passed it into `page.evaluate`. The details, the impact assessment and the rotation
 advice are in `docs/SECURITY_NOTES.md` §7.
 
-### 6.3 Escalation to the provider
+### 6.3 Server-side acceptance — 2026-10-31
+
+The browser harness proves the key works. It does not prove the product works, because the product calls
+Clocked from Node. That question has its own program:
+
+```bash
+CLOCKED_API_KEY=… npm run accept:live        # alias of verify:live
+```
+
+`scripts/live-acceptance.mjs` imports `clocked-sdk` directly, calls the three endpoints from the Node
+process, and records what came back in `.local/live-acceptance.json` (git-ignored):
+
+- HTTP status, and the edge headers `cf-ray`, `cf-mitigated`, `server-timing`, `x-clocked-credits`
+- response shape — field names and types, never content
+- the actual verdict, probabilities, entity kinds/offsets (values never printed), evidence counts
+- credits, cost, attempts, idempotency key
+- the data source, spelled out: *Clocked API via clocked-sdk (server-side Node process)*
+
+Result on 2026-10-31, from this machine, no browser involved:
+
+| Endpoint | HTTP | Latency | Verdict | Credits | `cf-mitigated` | `cf-ray` |
+| --- | --- | --- | --- | --- | --- | --- |
+| `POST /injection` | **403** | 752 ms | — (`PermissionDeniedError`) | 0 | `challenge` | `a531f1ebff0fcf1b-SJC` |
+| `POST /pii` | **403** | 653 ms | — | 0 | `challenge` | `a531f1f04dc516ff-SJC` |
+| `POST /script` | **403** | 713 ms | — | 0 | `challenge` | `a531f1f48e1a15b0-SJC` |
+
+**What this establishes.** The server-side path is refused at the edge, before authentication and before
+billing (0 credits, `x-clocked-credits` absent). The refusal is an HTML challenge, not a JSON error, so it
+is not the key, the body, the method or the endpoint. It came from `-SJC` this time, where the earlier
+session recorded `-SEA` for Node and `-CMH` for Chromium — the POP is not stable across attempts, which is
+one more reason not to build a theory on "same IP".
+
+**What it does not establish.** Why a browser from this machine reaches the API while Node does not.
+Three explanations survive; see §6.1. Nothing here discriminates between them.
+
+**Why the script does not try to get past it.** Solving a managed challenge programmatically is exactly the
+kind of bypass the challenge exists to prevent, and an integration that depends on defeating a security
+control is not an integration a judge should trust. The script records, exits with code `3`, and says so.
+
+Exit codes: `0` all three answered · `1` a call failed · `2` not configured · `3` challenged · `4` the
+report contained the key (it is deleted rather than written in that case).
+
+#### Transport knobs that were checked
+
+The SDK exposes enough to change the transport without changing the product, and the adapter now honours
+the two that matter operationally:
+
+| SDK option | Product support | Why |
+| --- | --- | --- |
+| `baseUrl` | `CLOCKED_BASE_URL` | If the provider supplies a different endpoint root, that is a one-line change, not a rewrite |
+| `timeout` | `CLOCKED_TIMEOUT_MS` (5–120 s) | A corporate proxy is slower; a demo should still fail fast |
+| `maxAttempts`, `retryBaseDelay`, `retryMaxDelay` | fixed at 2 / 400 ms / 3 s | Retries are bounded on purpose: a retried detection is billed again |
+| `fetch` | not used by the product | The acceptance script uses it to inject an `undici` `ProxyAgent` when `CLOCKED_PROXY` is set — **for that process only**, with no system proxy, NIC or environment change |
+
+The `fetch` hook is the answer to "can this run behind a proxy?" without touching the machine's network
+configuration: `CLOCKED_PROXY=http://proxy.internal:8080 npm run accept:live` uses the proxy; unsetting it
+uses a direct connection. Both were left unset for the run above, so the refusal is a direct-connection
+refusal.
+
+### 6.4 Escalation to the provider
 
 The 403 is not something TrustRoute can fix in code: the request is refused before authentication, at the
 edge, on a property of the client rather than of the account. The prepared escalation material lives

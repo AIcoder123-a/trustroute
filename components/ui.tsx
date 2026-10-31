@@ -23,6 +23,26 @@ export function DecisionBadge({ decision, large = false }: { decision: Decision;
   );
 }
 
+/**
+ * A run that produced no usable risk verdict.
+ *
+ * Deliberately not `REVIEW`: REVIEW means a detector found something a human
+ * should read. This means nothing was assessed, and the interface must not let
+ * a reader conflate the two.
+ */
+export function UnavailableBadge({ large = false }: { large?: boolean }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-2 rounded-lg border border-[#6b5320] bg-[#221a0d] font-semibold tracking-tight text-[#f0c48a] ${
+        large ? 'h-10 px-3.5 text-[15px]' : 'h-7 px-2.5 text-[11.5px] uppercase tracking-[0.06em]'
+      }`}
+    >
+      <span className={`${large ? 'size-2' : 'size-1.5'} rounded-full bg-review`} />
+      Unavailable
+    </span>
+  );
+}
+
 const STATUS_STYLE: Record<StageStatus, string> = {
   ok: 'text-fg-2',
   error: 'text-block',

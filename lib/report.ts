@@ -39,6 +39,8 @@ export interface ReviewReport {
   decision: {
     decision: string;
     headline: string;
+    /** `unavailable` when a required detection did not complete. */
+    screening: string;
     degraded: boolean;
     thresholds: Record<string, unknown>;
     reasons: { code: string; label: string; detail: string; severity: string }[];
@@ -69,6 +71,17 @@ export interface ReviewReport {
 }
 
 const PROBABILITY_DIGITS = 4;
+
+/**
+ * The provenance line for one live detection. A stage that returned nothing is
+ * not listed as if it answered — the report must not read as three clocks when
+ * one of them never rang.
+ */
+function liveSourceLine(name: string, url: string, stage: { status: string; error: { code: string } | null }): string {
+  if (stage.status === 'skipped') return `${name} — not requested for this content type`;
+  if (stage.status !== 'ok') return `${name} — ${url} returned no result (${stage.error?.code ?? stage.status})`;
+  return `${name} — POST ${url}`;
+}
 
 function roundProbability(key: string, value: unknown): unknown {
   if (typeof value === 'number' && (key === 'probability' || key.endsWith('_probability'))) {
@@ -175,6 +188,7 @@ export function buildReport(result: AnalyzeResponse, review: ReviewEvent | null)
     decision: {
       decision: result.policy.decision,
       headline: result.policy.headline,
+      screening: result.policy.screening,
       degraded: result.policy.degraded,
       thresholds,
       reasons: result.policy.reasons.map((reason) => ({
@@ -222,11 +236,9 @@ export function buildReport(result: AnalyzeResponse, review: ReviewEvent | null)
     dataSources:
       result.mode === 'live'
         ? [
-            'Clocked Guard — POST https://clocked.rezolve.ai/clocked/injection',
-            'Clocked Protect — POST https://clocked.rezolve.ai/clocked/pii',
-            result.stages.inspect.status === 'skipped'
-              ? 'Clocked Inspect — not requested for this content type'
-              : 'Clocked Inspect — POST https://clocked.rezolve.ai/clocked/script',
+            liveSourceLine('Clocked Guard', 'https://clocked.rezolve.ai/clocked/injection', result.stages.guard),
+            liveSourceLine('Clocked Protect', 'https://clocked.rezolve.ai/clocked/pii', result.stages.protect),
+            liveSourceLine('Clocked Inspect', 'https://clocked.rezolve.ai/clocked/script', result.stages.inspect),
             'TrustRoute policy engine — deterministic, server-side',
           ]
         : [
@@ -238,10 +250,13 @@ export function buildReport(result: AnalyzeResponse, review: ReviewEvent | null)
       'Detection probabilities are model estimates, not guarantees. A benign verdict is not proof of safety.',
       'Inspect performs static analysis only. Nothing was executed, and a passing verdict is not an execution authorization.',
       'Personal-data findings may be incomplete; masking applies to the findings returned, not to every possible sensitive fact.',
+      result.policy.screening === 'unavailable'
+        ? 'Screening was unavailable for at least one required detection. This report records an incomplete run, not a risk assessment.'
+        : null,
       result.mode === 'mock'
         ? 'This report was produced in mock mode and must not be presented as evidence of Clocked API behaviour.'
         : 'Probabilities and categories were returned by the Clocked API for this exact input.',
-    ],
+    ].filter((line): line is string => line !== null),
   };
 }
 

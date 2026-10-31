@@ -190,10 +190,21 @@ export interface PolicyCheck {
   source: DetectionKind | 'pipeline';
 }
 
+/**
+ * Whether the run produced a usable risk verdict at all.
+ *
+ * `unavailable` is not a fourth decision: the decision stays REVIEW, because a
+ * human must look. But the interface must not present it as a finding — no
+ * detection completed, so nothing was actually assessed.
+ */
+export type ScreeningState = 'complete' | 'unavailable';
+
 export interface PolicyOutcome {
   decision: Decision;
   /** One-line human-readable statement of what to do with the content. */
   headline: string;
+  /** `unavailable` when a required detection did not complete. */
+  screening: ScreeningState;
   reasons: PolicyReason[];
   actions: string[];
   /** Every threshold comparison, in evaluation order. */

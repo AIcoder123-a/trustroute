@@ -59,7 +59,8 @@ Decision rules, in the order they are evaluated (all thresholds configurable):
 | Outcome | Condition |
 | --- | --- |
 | **BLOCK** | injection ≥ 0.85, or `verdict=injection` with `severity=critical` at ≥ 0.70; or script `malicious` ≥ 0.80 |
-| **REVIEW** | any required detection did not complete · injection between 0.50 and the block line · script `suspicious` · high-sensitivity entity (`ssn`, `credit_card`, `bank_account`, `medical`, `passport`, `drivers_license`, `date_of_birth`) · ≥ 6 findings · findings present but no masked copy could be built |
+| **REVIEW** | injection between 0.50 and the block line · script `suspicious` · high-sensitivity entity (`ssn`, `credit_card`, `bank_account`, `medical`, `passport`, `drivers_license`, `date_of_birth`) · ≥ 6 findings · findings present but no masked copy could be built |
+| **REVIEW — screening unavailable** | any required detection did not complete. The interface and the export say `Screening unavailable — manual review required` rather than presenting a risk verdict, because nothing was assessed on that dimension |
 | **PASS** | everything completed, nothing above the block line, and any personal data was masked |
 
 The invariant that matters most: **a detection that did not complete can never produce PASS.** Timeout,
@@ -75,6 +76,15 @@ A missing key in live mode is a hard error, never a silent fallback to fixtures.
 | Printable review sheet | Mobile |
 | --- | --- |
 | ![Review sheet](docs/screenshots/report.png) | ![Mobile layout](docs/screenshots/mobile.png) |
+
+| A required detection did not complete (live) | The same state on a phone |
+| --- | --- |
+| ![Screening unavailable in live mode](docs/screenshots/screening-unavailable.png) | ![Screening unavailable on mobile](docs/screenshots/screening-unavailable-mobile.png) |
+
+The last row is not a mock-up of an error. It is a live-mode run on a machine whose network the Clocked edge
+answers with an HTML challenge (`403 cf-mitigated: challenge`): both stages report `edge_interstitial`, and
+the product holds the content instead of inventing a verdict. What each screenshot shows, and how to
+recapture it, is in `docs/SCREENSHOTS.md`.
 
 ## Quick start
 
@@ -100,7 +110,7 @@ npm run dev
 | `npm run verify` | typecheck → lint → unit tests → build |
 | `npm test` | vitest: policy, redaction, highlighting, report, validation, rate limit, pipeline |
 | `npm run test:e2e` | Playwright, desktop and mobile |
-| `npm run verify:live` | three real Clocked calls through `clocked-sdk`; prints field structure, never content |
+| `npm run verify:live` (alias `accept:live`) | **server-side acceptance**: three real calls through `clocked-sdk` from Node, no browser; records HTTP status, edge headers, shape, verdict, credits and data source to `.local/live-acceptance.json` |
 | `npm run verify:live:browser` | the same three calls through Chromium, for edges that challenge non-browser clients; asserts afterwards that the key never reached the page |
 | `node scripts/collect-diagnostics.mjs` | 15 credential-free probes (Node, `curl` direct, `curl` via proxy) for a vendor report |
 | `node scripts/egress-compare.mjs` | five credential-free client configurations compared — Node, `curl`, Chromium with and without a proxy |
@@ -115,6 +125,10 @@ Environment (`see .env.example`):
 | `POLICY_BLOCK_SCRIPT` | `0.80` | script malicious probability at which the policy blocks |
 | `POLICY_REVIEW_ENTITY_COUNT` | `6` | findings that force a human review on volume alone |
 | `RATE_LIMIT_REQUESTS` | `20` | screens per IP per 5-minute window |
+| `DAILY_SCREENS` | `60` live / `240` mock | screens per UTC day for the whole deployment — the credit-balance ceiling |
+| `ALLOWED_ORIGINS` | — | extra origins allowed to POST, for a reverse proxy; same-origin is always allowed |
+| `CLOCKED_BASE_URL` | SDK default | endpoint root override, for when the provider supplies a different one |
+| `CLOCKED_TIMEOUT_MS` | `30000` | per-attempt timeout, clamped to 5–120 s |
 
 ## Demo cases
 
@@ -142,7 +156,9 @@ lib/clocked/live     clocked-sdk; the only place the key is read
 lib/clocked/mock     labelled heuristic simulator — never presented as Clocked output
 lib/clocked/normalize  defensive parsing: an untrustworthy shape becomes 'invalid', not 'safe'
 lib/redact           rebuilds the masked copy from spans (bounds, re-anchor, surrogate-safe, overlap-safe)
-lib/policy           pure decision engine, no I/O, unit-tested
+lib/policy           pure decision engine, no I/O, unit-tested; also reports where screening was unavailable
+lib/admission        per-caller window + concurrency + a whole-deployment daily ceiling
+lib/origin           same-origin enforcement for the two POST routes (no CORS headers are ever emitted)
 lib/report           pure export builder: no raw text, no entity values, no overlapping evidence
 lib/copy             mode-aware wording: a sentence about Clocked can only exist in live mode
 ```
@@ -168,25 +184,41 @@ lib/copy             mode-aware wording: a sentence about Clocked can only exist
 
 | Layer | Count | Command |
 | --- | --- | --- |
-| Unit / integration (vitest) | 101 assertions in 13 files | `npm test` |
-| Browser (Playwright, desktop + mobile) | 24 assertions | `npm run test:e2e` |
+| Unit / integration (vitest) | 132 assertions in 17 files | `npm test` |
+| Browser (Playwright, desktop + mobile) | 46 runs (23 scenarios × 2 viewports), 44 passing, 2 deliberate skips | `npm run test:e2e` |
 
 The browser suite walks the real flow: load a case → screen → read the decision → inspect the masked copy →
 approve → export JSON → print sheet, at 1440×900 and 390×844. Details and results: `docs/TEST_REPORT.md`.
 
+## Where to look
+
+| Document | What it answers |
+| --- | --- |
+| `docs/PROJECT_OVERVIEW.md` | the submission overview: problem, who it is for, how the three endpoints compose |
+| `docs/API_INTEGRATION.md` | endpoint contracts, real response shapes, the edge behaviour, the acceptance run |
+| `docs/ARCHITECTURE.md` | how a request becomes a decision, and what the browser is allowed to know |
+| `docs/SECURITY_NOTES.md` | key handling, the public-demo controls, what is logged and what is not |
+| `docs/DEMO_SCRIPT.md` / `docs/DEMO_RECORDING.md` | the 100-second demo and how to record it |
+| `docs/SCREENSHOTS.md` | what each screenshot shows |
+| `docs/DEPLOYMENT.md` | host comparison, credit protection, the pre-deploy experiment |
+| `docs/RELEASE_CHECKLIST.md` | publishing the repository and the demo without leaking anything |
+| `docs/COMPETITION_RULES.md` | the rules, quoted, with what is verified and what is not |
+| `docs/TEST_REPORT.md` | every test, what it proves, and the results |
+
 ## Known limitations
 
-- **All three endpoints are verified with a real key, but not yet from the server process.** On
-  2026-10-30 `/injection`, `/pii` and `/script` returned `200` with real detections, real credits and real
-  field structures (recorded in `tests/fixtures/`, asserted by `tests/live-contract.test.ts`). That run
-  went through a browser, because the service edge challenges non-browser clients with an HTML
-  interstitial (`403`, "Just a moment…") before authentication: `curl` and Node are refused, while
-  Chromium on the same machine reaches the API. *Why* the two differ has not been established — see
-  `docs/API_INTEGRATION.md` §6.1 for the measurements and the three live hypotheses. The product calls
-  Clocked only from the server, so
-  `CLOCKED_MODE=live` on this machine reports `edge_interstitial` and falls closed to REVIEW — never PASS.
-  Exempting the endpoint from the browser-integrity challenge is a provider-side change. See
-  `docs/API_INTEGRATION.md` §6.1.
+- **All three endpoints are verified with a real key; the server-side path is still refused by the edge.**
+  On 2026-10-30 `/injection`, `/pii` and `/script` returned `200` with real detections, real credits and
+  real field structures (recorded in `tests/fixtures/`, asserted by `tests/live-contract.test.ts`). That
+  run went through a browser, because the edge answers non-browser clients with an HTML challenge
+  (`403`, `cf-mitigated: challenge`) before authentication.
+  Re-measured on 2026-10-31 with `npm run accept:live` — the product's own path, Node + `clocked-sdk`, no
+  browser: all three calls returned `403 cf-mitigated: challenge` from `-SJC`, 0 credits, in ~0.7 s each.
+  *Why* a browser passes where Node does not has not been established; `docs/API_INTEGRATION.md` §6.1
+  lists the observations and the three hypotheses that survive them. On this machine
+  `CLOCKED_MODE=live` therefore reports `edge_interstitial` and holds the content with
+  `Screening unavailable — manual review required` — never PASS, and never a simulated number dressed as
+  a live one. Exempting `/clocked/*` from the browser-integrity challenge is a provider-side change.
 - **The simulated mode is labelled as such everywhere**, on purpose and on every surface: a
   `DEMO · SIMULATED RESULTS` banner with an expandable explanation, a `SIMULATED` tag per stage card
   (and on the evidence list), a `SIMULATED` badge in the header, and `dataSources` / `disclaimers` / the printable sheet in the export.
@@ -197,6 +229,9 @@ approve → export JSON → print sheet, at 1440×900 and 390×844. Details and 
 - No authentication. A public deployment needs a gate in front of it.
 - Content is capped (16k prose / 32k script) and rejected rather than truncated, so a screen always covers
   the whole input.
+- Abuse controls are per-process: a per-IP window, a per-caller concurrency slot and a whole-deployment
+  daily ceiling. A multi-instance deployment multiplies the first two; put a shared limiter at the edge.
+- No authentication. A public deployment needs a gate in front of it or a very small daily budget.
 
 ## Documentation
 

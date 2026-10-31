@@ -43,8 +43,11 @@ on what those agents are allowed to read.
 3. **Masking is real.** The forwarded copy is rebuilt from Protect's spans with bounds checks, value
    re-anchoring, surrogate-pair safety and deterministic overlap resolution, then compared to Clocked's own
    `anonymized_text`. When masking cannot be trusted, the original is not released in its place.
-4. **Failure is never a pass.** A timeout, an authorization error, exhausted credits, a malformed body or a
-   skipped required stage degrades the run to REVIEW. Tested for each case.
+4. **Failure is never a pass — and it never pretends to be a finding.** A timeout, an authorization error,
+   exhausted credits, a malformed body or a skipped required stage makes the run report
+   `Screening unavailable — manual review required`: the badge stops saying REVIEW, the stage explains that
+   it contributed nothing, the forwarded copy is withheld, and the export records
+   `screening: "unavailable"` with a disclaimer that the report is not a risk assessment.
 5. **Defensible exports.** A JSON report and a printable review sheet carry the hashed subject, the
    per-endpoint verdicts, the resolved thresholds, the reasons, the human decision and the data sources —
    with no raw text, no entity values, and no evidence quote that overlaps personal data.
@@ -72,7 +75,8 @@ Protect run for every content type; Inspect runs only when the content is a scri
   a hard error rather than a silent fallback; every stage is badged with its transport.
 - **Server-only secrets**: the key is read inside a route handler; the config module throws if imported in
   a browser context; exports are asserted to contain no key-shaped strings.
-- **Real browser coverage**: 16 Playwright assertions over the full flow at 1440×900 and 390×844.
+- **Real browser coverage**: 23 Playwright scenarios over the full flow at 1440×900 and 390×844, including
+  the unavailable state, a cancelled screen, a refused service (503) and an exported incomplete run.
 - **Small surface**: four runtime dependencies (next, react, react-dom, clocked-sdk), no component library,
   no icon package, no database, no telemetry.
 
@@ -80,13 +84,13 @@ Protect run for every content type; Inspect runs only when the content is a scri
 
 | Item | State |
 | --- | --- |
-| Build, typecheck, lint | clean |
-| Unit / integration tests | 75 passing |
-| Browser tests | 16 passing (desktop + mobile) |
-| Live Clocked detections | **verified with a real key** — `/injection` 0.9957 critical, `/pii` 6 entities including two custom kinds, `/script` 0.9948 malicious; 12 credits / $0.0024 per screen; responses recorded under `tests/fixtures/` |
-| Server-side live path | blocked from the build machine by an edge browser-integrity challenge on non-browser clients; the app falls closed to REVIEW rather than passing |
-| Deployment | <demo-url> |
-| Repository | <github-url> |
+| Build, typecheck, lint | clean, 0 warnings |
+| Unit / integration tests | 132 passing in 17 files |
+| Browser tests | 46 runs (23 scenarios × desktop + mobile), 44 passing, 2 deliberate skips |
+| Live Clocked detections | **verified with a real key** — `/injection` 0.9957 critical, `/pii` 6 entities including two custom kinds, `/script` 0.9948 malicious; 12–19 credits per screen; responses recorded under `tests/fixtures/` and asserted by contract tests |
+| Server-side live path | **re-measured 2026-10-31** with the product's own SDK path: all three endpoints `403 cf-mitigated: challenge` from `-SJC`, 0 credits. The app reports `Screening unavailable — manual review required`; it does not fall back to the simulator |
+| Deployment | `<demo-url>` — not deployed yet |
+| Repository | `<github-url>` — local only until the owner publishes it |
 
 The mock mode is clearly labelled in the UI and in every export. It exists so the product can be reviewed
 without a key; it is never presented as Clocked output.
@@ -96,7 +100,7 @@ without a key; it is never presented as Clocked output.
 | Field | Value |
 | --- | --- |
 | Project name | TrustRoute |
-| Demo | `<demo-url>` — or `<video-url>` if the deployment is not ready |
+| Demo | `<demo-url>` — and `<video-url>` as well; either satisfies the rules, both are safer |
 | Repository | `<github-url>` (public, with development history) |
 | Awards to enter | Best Overall App · Best Use of Protect, Guard, or Inspect |
 | Team | `<name>`, `<email>`, `<github-handle>` |
@@ -104,7 +108,19 @@ without a key; it is never presented as Clocked output.
 
 ## Video script
 
-See `docs/DEMO_SCRIPT.md`. Two and a half minutes, five scenes, recorded from the running app.
+See `docs/DEMO_SCRIPT.md`. 1:40 (100 seconds), six scenes, recorded from the running app; the rules set no
+length, this one is chosen so a judge reaches the end. `docs/DEMO_RECORDING.md` is the production
+checklist.
+
+## The failure question the form actually asks
+
+The form asks how the application handles uncertain results, missing information and failed requests. The
+short answer, in the product's own words:
+
+> Detections are evidence; the decision is policy. When a detection does not complete, TrustRoute says so —
+> `Screening unavailable — manual review required` — withholds the forwarded copy, records the incomplete
+> state in the export, and refuses to release the content. It never turns "we could not check" into PASS,
+> and it never substitutes a simulated result for a failed live call.
 
 ## What I learned (optional field)
 
