@@ -14,6 +14,8 @@ import type {
   Decision,
   GuardData,
   InspectData,
+  PolicyCheck,
+  PolicyCheckOutcome,
   PolicyOutcome,
   PolicyReason,
   PolicyThresholds,
@@ -66,11 +68,23 @@ function stageFailureReason(label: string, stage: { status: string; error: { mes
   };
 }
 
+function check(
+  id: string,
+  label: string,
+  observed: string,
+  threshold: string,
+  outcome: PolicyCheckOutcome,
+  source: PolicyCheck['source'],
+): PolicyCheck {
+  return { id, label, observed, threshold, outcome, source };
+}
+
 export function evaluatePolicy(input: PolicyInput): PolicyOutcome {
   const thresholds: PolicyThresholds = { ...DEFAULT_THRESHOLDS, ...input.thresholds };
   const { guard, protect, inspect, redaction, contentType } = input;
 
   const reasons: PolicyReason[] = [];
+  const checks: PolicyCheck[] = [];
   let block = false;
   let review = false;
 
@@ -82,17 +96,30 @@ export function evaluatePolicy(input: PolicyInput): PolicyOutcome {
   if (guard.status !== 'ok' || !guard.data) {
     degraded = true;
     reasons.push(stageFailureReason('Guard (injection)', guard));
+    checks.push(check('guard_usable', 'Guard returned a usable result', guard.status, 'required', 'failed', 'pipeline'));
     review = true;
+  } else {
+    checks.push(check('guard_usable', 'Guard returned a usable result', 'ok', 'required', 'pass', 'pipeline'));
   }
   if (protect.status !== 'ok' || !protect.data) {
     degraded = true;
     reasons.push(stageFailureReason('Protect (PII)', protect));
+    checks.push(check('protect_usable', 'Protect returned a usable result', protect.status, 'required', 'failed', 'pipeline'));
     review = true;
+  } else {
+    checks.push(check('protect_usable', 'Protect returned a usable result', 'ok', 'required', 'pass', 'pipeline'));
   }
   if (inspectRequired && (inspect.status !== 'ok' || !inspect.data)) {
     degraded = true;
     reasons.push(stageFailureReason('Inspect (script)', inspect));
+    checks.push(check('inspect_usable', 'Inspect returned a usable result', inspect.status, 'required', 'failed', 'pipeline'));
     review = true;
+  } else if (inspectRequired) {
+    checks.push(check('inspect_usable', 'Inspect returned a usable result', 'ok', 'required', 'pass', 'pipeline'));
+  } else {
+    checks.push(
+      check('inspect_usable', 'Inspect requirement for this content type', 'not needed for prose', 'scripts only', 'skipped', 'pipeline'),
+    );
   }
 
   // ---- Guard -------------------------------------------------------------
@@ -134,6 +161,47 @@ export function evaluatePolicy(input: PolicyInput): PolicyOutcome {
         severity: 'info',
         source: 'guard',
       });
+    }
+
+    // The trace records the comparison, not the conclusion: a reader can see the
+    // measured number next to the line it was compared against. `block` is not
+    // used here on purpose — the override below can block without this line
+    // being crossed, and the trace must not pretend otherwise.
+    const aboveBlockLine = probability >= thresholds.blockInjectionProbability;
+    checks.push(
+      check(
+        'guard_block_line',
+        'Injection probability vs block line',
+        pct(probability),
+        `≥ ${pct(thresholds.blockInjectionProbability)}`,
+        aboveBlockLine ? 'block' : 'pass',
+        'guard',
+      ),
+    );
+    if (saysInjection && severity === 'critical' && probability >= 0.7) {
+      checks.push(
+        check(
+          'guard_critical_override',
+          'Critical-severity injection verdict',
+          `${guardData.verdict} · ${severity} · ${pct(probability)}`,
+          'injection + critical at ≥ 70.0%',
+          'block',
+          'guard',
+        ),
+      );
+    }
+    if (!block) {
+      const needsHuman = saysInjection || probability >= thresholds.reviewInjectionProbability;
+      checks.push(
+        check(
+          'guard_review_line',
+          'Injection probability vs review line',
+          pct(probability),
+          `≥ ${pct(thresholds.reviewInjectionProbability)} or verdict "injection"`,
+          needsHuman ? 'review' : 'pass',
+          'guard',
+        ),
+      );
     }
   }
 
@@ -207,6 +275,33 @@ export function evaluatePolicy(input: PolicyInput): PolicyOutcome {
         source: 'protect',
       });
     }
+
+    checks.push(
+      check(
+        'protect_high_sensitivity',
+        'High-sensitivity findings',
+        highSensitivity.length === 0 ? 'none' : `${highSensitivity.length} (${Array.from(new Set(highSensitivity.map((entity) => entity.type))).join(', ')})`,
+        '0 tolerated without a human',
+        highSensitivity.length > 0 ? 'review' : 'pass',
+        'protect',
+      ),
+      check(
+        'protect_volume',
+        'Total personal-data findings',
+        String(entities.length),
+        `< ${thresholds.reviewEntityCount}`,
+        entities.length >= thresholds.reviewEntityCount ? 'review' : 'pass',
+        'protect',
+      ),
+      check(
+        'protect_masked_copy',
+        'Masked copy for forwarding',
+        redaction.maskedText ? 'built' : entities.length > 0 ? 'not built' : 'not needed',
+        'required once a finding exists',
+        entities.length > 0 && redaction.maskedText === null ? 'failed' : entities.length === 0 ? 'skipped' : 'pass',
+        'protect',
+      ),
+    );
   }
 
   // ---- Inspect -----------------------------------------------------------
@@ -249,6 +344,44 @@ export function evaluatePolicy(input: PolicyInput): PolicyOutcome {
         severity: 'info',
         source: 'inspect',
       });
+    }
+
+    const aboveBlockLine = malicious >= thresholds.blockScriptMaliciousProbability;
+    const criticalOverride = saysMalicious && severity === 'critical' && malicious >= 0.65;
+    checks.push(
+      check(
+        'inspect_block_line',
+        'Malicious probability vs block line',
+        pct(malicious),
+        `≥ ${pct(thresholds.blockScriptMaliciousProbability)}`,
+        aboveBlockLine ? 'block' : 'pass',
+        'inspect',
+      ),
+    );
+    if (criticalOverride) {
+      checks.push(
+        check(
+          'inspect_critical_override',
+          'Critical-severity malicious verdict',
+          `${inspectData.verdict} · ${severity} · ${pct(malicious)}`,
+          'malicious + critical at ≥ 65.0%',
+          'block',
+          'inspect',
+        ),
+      );
+    }
+    if (!aboveBlockLine) {
+      const needsHuman = saysMalicious || inspectData.verdict === 'suspicious' || suspicious >= thresholds.reviewScriptSuspiciousProbability;
+      checks.push(
+        check(
+          'inspect_review_line',
+          'Script signal vs review line',
+          `${pct(suspicious)} suspicious · verdict ${inspectData.verdict}`,
+          `≥ ${pct(thresholds.reviewScriptSuspiciousProbability)} or verdict suspicious/malicious`,
+          needsHuman ? 'review' : 'pass',
+          'inspect',
+        ),
+      );
     }
   } else if (!inspectRequired) {
     reasons.push({
@@ -295,6 +428,7 @@ export function evaluatePolicy(input: PolicyInput): PolicyOutcome {
     headline,
     reasons,
     actions,
+    checks,
     requiresHumanReview: decision !== 'PASS',
     canForwardMasked: Boolean(redaction.maskedText) && decision !== 'BLOCK',
     thresholds,

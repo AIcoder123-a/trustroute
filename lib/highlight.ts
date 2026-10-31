@@ -47,7 +47,7 @@ function isHighSurrogate(code: number): boolean {
  * offsets and a span that does not fit is dropped rather than clamped into a
  * plausible-looking but wrong highlight.
  */
-function resolveScriptHit(text: string, hit: { start: number; end: number }): [number, number] | null {
+export function resolveScriptSpan(text: string, hit: { start: number; end: number }): [number, number] | null {
   if (!Number.isInteger(hit.start) || !Number.isInteger(hit.end)) return null;
   if (hit.start < 0 || hit.end > text.length || hit.start >= hit.end) return null;
   return [hit.start, hit.end];
@@ -90,7 +90,7 @@ export function buildSegments(
   }
 
   for (const hit of source.inspect?.evidence ?? []) {
-    const span = resolveScriptHit(text, hit);
+    const span = resolveScriptSpan(text, hit);
     if (span === null) continue;
     const [start, end] = span;
     marks.push({ start, end, kind: 'script', priority: PRIORITY.script, label: 'script' });

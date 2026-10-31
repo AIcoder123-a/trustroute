@@ -42,6 +42,8 @@ export interface ReviewReport {
     degraded: boolean;
     thresholds: Record<string, unknown>;
     reasons: { code: string; label: string; detail: string; severity: string }[];
+    /** Every threshold comparison the engine made, so the report shows its work. */
+    checks: { id: string; label: string; observed: string; threshold: string; outcome: string }[];
     actions: string[];
   };
   protection: {
@@ -180,6 +182,13 @@ export function buildReport(result: AnalyzeResponse, review: ReviewEvent | null)
         label: reason.label,
         detail: reason.detail,
         severity: reason.severity,
+      })),
+      checks: result.policy.checks.map((item) => ({
+        id: item.id,
+        label: item.label,
+        observed: item.observed,
+        threshold: item.threshold,
+        outcome: item.outcome,
       })),
       actions: result.policy.actions,
     },

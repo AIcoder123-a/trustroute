@@ -33,7 +33,8 @@ function StageShell({
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-1.5">
             <h3 className="text-[13px] font-semibold tracking-tight text-fg">{title}</h3>
-            <span className="mono text-[10.5px] text-fg-3">{endpoint}</span>
+            {/* On a 390px viewport the endpoint squeezes the title into three lines. */}
+            <span className="mono hidden text-[10.5px] text-fg-3 sm:inline">{endpoint}</span>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2.5">

@@ -89,7 +89,7 @@ export function ReportDialog({
             <div className="shrink-0 text-right">
               <DecisionBadge decision={report.decision.decision as Decision} large />
               <div className="mt-1.5 text-[10.5px] text-fg-3">
-                {report.generator.transport === 'live' ? 'Live Clocked API' : 'Mock mode — not Clocked output'}
+                {report.generator.transport === 'live' ? 'Live Clocked API' : 'SIMULATED RESULTS — not Clocked output'}
               </div>
             </div>
           </div>

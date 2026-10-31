@@ -27,7 +27,8 @@ test.describe('TrustRoute workbench', () => {
     await page.goto('/');
 
     await expect(page.getByRole('heading', { level: 1 })).toContainText('Untrusted content should be inspected');
-    await expect(page.getByText('Mock preview — no Clocked API key is configured.')).toBeVisible();
+    await expect(page.getByText('DEMO · SIMULATED RESULTS')).toBeVisible();
+    await expect(page.getByText('Why is this a demo and not the live API?')).toBeVisible();
     await expect(page.locator('[data-testid="case-list"]:visible').first()).toBeVisible();
     await expect(page.getByRole('button', { name: /Screen content/ })).toBeDisabled();
     await expect(page.getByText('How the decision is made')).toBeVisible();
@@ -120,5 +121,54 @@ test.describe('TrustRoute workbench', () => {
     await expect(page.getByRole('button', { name: /Screen content/ })).toBeDisabled();
     await page.getByRole('textbox', { name: 'Content to screen' }).fill('   ');
     await expect(page.getByRole('button', { name: /Screen content/ })).toBeDisabled();
+  });
+
+  test('shows the evidence passage and locates it in the source', async ({ page }) => {
+    await page.goto('/');
+    await loadAndScreen(page, CASES.injection);
+
+    const evidence = page.getByRole('region', { name: 'Evidence' });
+    await expect(evidence).toBeVisible();
+
+    const firstPassage = evidence.getByRole('button').first();
+    await expect(firstPassage).toContainText('L');
+    await firstPassage.click();
+
+    await expect(firstPassage).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('tab', { name: 'As received' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('mark[data-start]').first()).toBeVisible();
+  });
+
+  test('shows the rule trace behind the decision', async ({ page }) => {
+    await page.goto('/');
+    await loadAndScreen(page, CASES.injection);
+
+    await page.getByText('Rule trace').click();
+    await expect(page.getByText('Injection probability vs block line')).toBeVisible();
+    await expect(page.getByText('Guard returned a usable result')).toBeVisible();
+  });
+
+  test('refuses to record a rejection without a reason', async ({ page }) => {
+    await page.goto('/');
+    await loadAndScreen(page, CASES.review);
+
+    await expect(page.getByTestId('decision-badge')).toHaveText(/REVIEW/);
+    await expect(page.getByRole('button', { name: 'Reject' })).toBeDisabled();
+
+    await page.getByRole('textbox', { name: 'Reviewer note' }).fill('customer asked us to stop');
+    await page.getByRole('button', { name: 'Reject' }).click();
+
+    await expect(page.getByText('Rejected. The content stays blocked inside TrustRoute.')).toBeVisible();
+    await expect(page.getByTestId('decision-badge')).toHaveText(/BLOCK/);
+    await expect(page.getByText('customer asked us to stop')).toBeVisible();
+  });
+
+  test('shows the mask map so a reviewer can see what changed', async ({ page }) => {
+    await page.goto('/');
+    await loadAndScreen(page, CASES.pii);
+
+    await page.getByRole('tab', { name: 'Forwarded copy' }).click();
+    await expect(page.getByText(/Mask map ·/)).toBeVisible();
+    await expect(page.getByRole('cell', { name: '<EMAIL>' })).toBeVisible();
   });
 });

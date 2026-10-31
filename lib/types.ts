@@ -171,12 +171,33 @@ export interface PolicyThresholds {
   highSensitivityKinds: string[];
 }
 
+export type PolicyCheckOutcome = 'pass' | 'review' | 'block' | 'skipped' | 'failed';
+
+/**
+ * One line of the policy engine's reasoning: what was measured, against which
+ * line, and what that did to the decision. The decision itself is a pure
+ * function of these checks, so showing them is showing the actual mechanism —
+ * not a narrative written afterwards.
+ */
+export interface PolicyCheck {
+  id: string;
+  label: string;
+  /** The measured value, already formatted for display. */
+  observed: string;
+  /** The line it was compared against. */
+  threshold: string;
+  outcome: PolicyCheckOutcome;
+  source: DetectionKind | 'pipeline';
+}
+
 export interface PolicyOutcome {
   decision: Decision;
   /** One-line human-readable statement of what to do with the content. */
   headline: string;
   reasons: PolicyReason[];
   actions: string[];
+  /** Every threshold comparison, in evaluation order. */
+  checks: PolicyCheck[];
   /** True when a human must decide before the content moves on. */
   requiresHumanReview: boolean;
   /** True when the masked copy may be forwarded instead of the original. */

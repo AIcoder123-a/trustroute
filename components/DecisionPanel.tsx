@@ -1,6 +1,9 @@
 'use client';
 
-import type { AnalyzeResponse, ReviewEvent } from '@/lib/types';
+import { useState } from 'react';
+
+import type { AnalyzeResponse, PolicyCheckOutcome, ReviewEvent } from '@/lib/types';
+import { MIN_REJECT_NOTE, REVIEW_NOTE_MAX } from '@/lib/review';
 import { clockTime, ms, pct } from '@/lib/format';
 import { DECISION_STYLE, DecisionBadge, Divider } from '@/components/ui';
 import { AlertIcon, CheckIcon, ClockIcon, DownloadIcon, InfoIcon, PrintIcon, RefreshIcon, ShieldIcon, XIcon } from '@/components/icons';
@@ -15,6 +18,22 @@ const DOT: Record<'block' | 'review' | 'info', string> = {
   block: 'bg-block',
   review: 'bg-review',
   info: 'bg-fg-3/60',
+};
+
+const CHECK_TONE: Record<PolicyCheckOutcome, string> = {
+  block: 'text-block',
+  review: 'text-review',
+  pass: 'text-pass',
+  skipped: 'text-fg-3',
+  failed: 'text-block',
+};
+
+const CHECK_DOT: Record<PolicyCheckOutcome, string> = {
+  block: 'bg-block',
+  review: 'bg-review',
+  pass: 'bg-pass',
+  skipped: 'bg-fg-3/40',
+  failed: 'bg-block',
 };
 
 function IdleExplanation() {
@@ -82,18 +101,22 @@ export function DecisionPanel({
   result: AnalyzeResponse | null;
   review: ReviewEvent | null;
   busy: boolean;
-  onApprove: () => void;
-  onReject: () => void;
+  onApprove: (note: string) => void;
+  onReject: (note: string) => void;
   onRecheck: () => void;
   onExport: () => void;
   onPrint: () => void;
 }) {
+  const [note, setNote] = useState('');
+
   if (!result) return <IdleExplanation />;
 
   const { policy } = result;
   const style = DECISION_STYLE[policy.decision];
   const effectiveDecision = review?.decisionAfter ?? policy.decision;
   const overridden = review !== null && review.decisionAfter !== policy.decision;
+  const trimmedNote = note.trim();
+  const noteIsEnough = trimmedNote.length >= MIN_REJECT_NOTE;
 
   return (
     <div className="panel overflow-hidden">
@@ -163,6 +186,38 @@ export function DecisionPanel({
 
         <Divider />
 
+        <details className="group">
+          <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[11px] font-medium text-fg-2">
+            <span className="inline-block text-[9px] text-fg-3 transition-transform group-open:rotate-90" aria-hidden="true">
+              ▶
+            </span>
+            Rule trace
+            <span className="mono ml-auto text-[10px] font-normal text-fg-3">{policy.checks.length} checks</span>
+          </summary>
+          <ul className="mt-2 space-y-1.5">
+            {policy.checks.map((item) => (
+              <li key={item.id} className="flex items-start gap-2">
+                <span
+                  className={`mt-[5px] size-1.5 shrink-0 rounded-full ${CHECK_DOT[item.outcome]}`}
+                  aria-hidden="true"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className={`text-[11px] leading-snug ${CHECK_TONE[item.outcome]}`}>{item.label}</div>
+                  <div className="mono mt-px text-[10px] leading-snug text-fg-3">
+                    {item.observed} · {item.threshold}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-[10px] leading-relaxed text-fg-3">
+            Every comparison the engine made, in evaluation order. A block anywhere wins; an unmet review line sends the
+            content to a human. The same inputs always produce the same trace.
+          </p>
+        </details>
+
+        <Divider />
+
         <div>
           <div className="label mb-1.5">What to do next</div>
           <ol className="space-y-1">
@@ -197,7 +252,7 @@ export function DecisionPanel({
           <div>
             <dt className="label">Credits</dt>
             <dd className="mono text-[11.5px] text-fg">
-              {result.credits.reported ? result.credits.total : result.mode === 'mock' ? 'n/a · mock' : 'not reported'}
+              {result.credits.reported ? result.credits.total : result.mode === 'mock' ? 'n/a · simulated' : 'not reported'}
             </dd>
           </div>
         </dl>
@@ -226,31 +281,69 @@ export function DecisionPanel({
               </p>
             </div>
           ) : (
-            <div className="flex flex-wrap gap-1.5">
-              <button
-                type="button"
-                className="btn h-8 flex-1 px-2.5 text-[11.5px]"
-                onClick={onApprove}
-                disabled={busy || policy.decision === 'PASS'}
-                title={policy.decision === 'PASS' ? 'Nothing to approve: policy already passed this content.' : undefined}
-              >
-                <CheckIcon size={13} className="text-pass" />
-                Approve
-              </button>
-              <button
-                type="button"
-                className="btn h-8 flex-1 px-2.5 text-[11.5px]"
-                onClick={onReject}
-                disabled={busy || policy.decision === 'BLOCK'}
-                title={policy.decision === 'BLOCK' ? 'Already blocked by policy.' : undefined}
-              >
-                <XIcon size={13} className="text-block" />
-                Reject
-              </button>
-              <button type="button" className="btn h-8 px-2.5 text-[11.5px]" onClick={onRecheck} disabled={busy}>
-                <RefreshIcon size={13} />
-                Recheck
-              </button>
+            <div className="space-y-2">
+              <label className="block">
+                <span className="label">
+                  Reviewer note <span className="normal-case tracking-normal text-fg-3">· required to reject</span>
+                </span>
+                <textarea
+                  value={note}
+                  onChange={(event) => setNote(event.target.value)}
+                  rows={2}
+                  maxLength={REVIEW_NOTE_MAX}
+                  aria-label="Reviewer note"
+                  placeholder="Why this decision — one sentence is enough."
+                  className="scroll-thin mt-1 block w-full resize-none rounded-md border border-line bg-panel-2 px-2 py-1.5 text-[11.5px] leading-relaxed text-fg outline-none placeholder:text-fg-3 focus:border-accent/60"
+                />
+              </label>
+
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  className="btn h-8 flex-1 px-2.5 text-[11.5px]"
+                  onClick={() => {
+                    onApprove(trimmedNote);
+                    setNote('');
+                  }}
+                  disabled={busy || policy.decision === 'PASS'}
+                  title={policy.decision === 'PASS' ? 'Nothing to approve: policy already passed this content.' : undefined}
+                >
+                  <CheckIcon size={13} className="text-pass" />
+                  Approve
+                </button>
+                <button
+                  type="button"
+                  className="btn h-8 flex-1 px-2.5 text-[11.5px]"
+                  onClick={() => {
+                    onReject(trimmedNote);
+                    setNote('');
+                  }}
+                  disabled={busy || policy.decision === 'BLOCK' || !noteIsEnough}
+                  title={
+                    policy.decision === 'BLOCK'
+                      ? 'Already blocked by policy.'
+                      : noteIsEnough
+                        ? undefined
+                        : `Add at least ${MIN_REJECT_NOTE} characters of reasoning to reject.`
+                  }
+                >
+                  <XIcon size={13} className="text-block" />
+                  Reject
+                </button>
+                <button type="button" className="btn h-8 px-2.5 text-[11.5px]" onClick={onRecheck} disabled={busy}>
+                  <RefreshIcon size={13} />
+                  Recheck
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between text-[10px] text-fg-3">
+                <span>
+                  {noteIsEnough ? 'Ready to record.' : `${Math.max(0, MIN_REJECT_NOTE - trimmedNote.length)} more characters to reject`}
+                </span>
+                <span className="mono">
+                  {trimmedNote.length}/{REVIEW_NOTE_MAX}
+                </span>
+              </div>
             </div>
           )}
           <p className="mt-2 text-[10.5px] leading-relaxed text-fg-3">

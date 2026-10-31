@@ -17,6 +17,7 @@ import { CONTENT_TYPE_LABELS } from '@/lib/types';
 import { CaseRail, CaseStrip, ContentTypeTabs } from '@/components/CaseRail';
 import { ContentView } from '@/components/ContentView';
 import { DecisionPanel } from '@/components/DecisionPanel';
+import { EvidencePanel } from '@/components/EvidencePanel';
 import { ReportDialog } from '@/components/ReportDialog';
 import { SessionTrail } from '@/components/SessionTrail';
 import { GuardCard, InspectCard, ProtectCard } from '@/components/stages';
@@ -55,9 +56,12 @@ export function Workbench({
   const [reviewBusy, setReviewBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [audit, setAudit] = useState<AuditRecord[]>([]);
+  const [focus, setFocus] = useState<{ start: number; end: number; id: string } | null>(null);
+  const [elapsed, setElapsed] = useState(0);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const resultRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const limit = contentType === 'script' ? limits.scriptCharacters : limits.proseCharacters;
   const overLimit = text.length > limit;
@@ -83,6 +87,7 @@ export function Workbench({
     setResult(null);
     setReview(null);
     setError(null);
+    setFocus(null);
     setRunState('idle');
   }, []);
 
@@ -111,11 +116,16 @@ export function Workbench({
       setError(null);
       setReview(null);
       setNotice(null);
+      setFocus(null);
+
+      const controller = new AbortController();
+      abortRef.current = controller;
 
       try {
         const response = await fetch('/api/analyze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
           body: JSON.stringify({
             text: payload.text,
             contentType: payload.contentType,
@@ -162,6 +172,14 @@ export function Workbench({
         void refreshAudit();
         requestAnimationFrame(() => resultRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
       } catch (cause) {
+        if (cause instanceof Error && cause.name === 'AbortError') {
+          // The reviewer stopped it. Nothing was decided, so there is no result
+          // and no decision to override — say that instead of "network error".
+          setResult(null);
+          setRunState('idle');
+          setNotice('Screening cancelled before a decision was made. Nothing was screened and nothing was released.');
+          return;
+        }
         setResult(null);
         setError({
           title: 'Network error',
@@ -172,13 +190,19 @@ export function Workbench({
           retryable: true,
         });
         setRunState('error');
+      } finally {
+        abortRef.current = null;
       }
     },
     [activeCase, contentType, text, refreshAudit],
   );
 
+  const cancel = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
+
   const submitReview = useCallback(
-    async (action: ReviewAction) => {
+    async (action: ReviewAction, note: string) => {
       if (!result) return;
       const decisionBefore: Decision = result.policy.decision;
       const decisionAfter: Decision = action === 'approve' ? 'PASS' : action === 'reject' ? 'BLOCK' : decisionBefore;
@@ -188,9 +212,18 @@ export function Workbench({
         const response = await fetch('/api/review', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ runId: result.runId, action, note: null, decisionBefore, decisionAfter }),
+          body: JSON.stringify({
+            runId: result.runId,
+            action,
+            note: note.length > 0 ? note : null,
+            decisionBefore,
+            decisionAfter,
+          }),
         });
-        if (!response.ok) throw new Error(`Review endpoint returned ${response.status}`);
+        if (!response.ok) {
+          const failure = (await response.json().catch(() => null)) as { message?: string } | null;
+          throw new Error(failure?.message ?? `Review endpoint returned ${response.status}`);
+        }
         const body = (await response.json()) as { event: ReviewEvent };
         setReview(body.event);
         void refreshAudit();
@@ -201,8 +234,12 @@ export function Workbench({
               ? 'Rejected. The content stays blocked inside TrustRoute.'
               : 'Review recorded.',
         );
-      } catch {
-        setNotice('Could not record the review — the internal state was not changed.');
+      } catch (cause) {
+        setNotice(
+          cause instanceof Error && cause.message.length > 0
+            ? `Could not record the review: ${cause.message}`
+            : 'Could not record the review — the internal state was not changed.',
+        );
       } finally {
         setReviewBusy(false);
       }
@@ -228,6 +265,18 @@ export function Workbench({
   useEffect(() => {
     void refreshAudit();
   }, [refreshAudit]);
+
+  // A screened request can take a few seconds; without a clock the interface
+  // looks frozen and people press Screen again, spending credits twice.
+  useEffect(() => {
+    if (runState !== 'loading') {
+      setElapsed(0);
+      return;
+    }
+    const started = Date.now();
+    const ticker = setInterval(() => setElapsed(Date.now() - started), 200);
+    return () => clearInterval(ticker);
+  }, [runState]);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -282,10 +331,10 @@ export function Workbench({
                   ? 'border-[#1d5745] bg-[#0d2720] text-pass'
                   : 'border-[#6b5320] bg-[#26200f] text-review'
               }`}
-              title={mode === 'live' ? 'Live Clocked API responses' : 'No API key: synthetic results'}
+              title={mode === 'live' ? 'Live Clocked API responses' : 'Simulated results — no Clocked API was called'}
             >
               <span className={`size-1.5 rounded-full ${mode === 'live' ? 'bg-pass' : 'bg-review'}`} />
-              {mode === 'live' ? 'Live' : 'Mock'}
+              {mode === 'live' ? 'Live' : 'Simulated'}
             </span>
           </div>
         </div>
@@ -295,13 +344,33 @@ export function Workbench({
         <div className="border-b border-[#3f3316] bg-[#1a1509]">
           <div className="mx-auto flex max-w-[1680px] items-start gap-2 px-4 py-2">
             <AlertIcon size={13} className="mt-[3px] shrink-0 text-review" />
-            <p className="text-[11.5px] leading-relaxed text-[#d9bd82]">
-              <span className="font-semibold">Mock preview — no Clocked API key is configured.</span> Detections below
-              come from a local heuristic simulator, not from Clocked, and must not be read as Clocked verdicts. Add{' '}
-              <code className="mono rounded bg-black/30 px-1 py-px text-[10.5px]">CLOCKED_API_KEY</code> to{' '}
-              <code className="mono rounded bg-black/30 px-1 py-px text-[10.5px]">.env.local</code> and restart to screen
-              with the live API. The policy engine, redaction and review flow are identical in both modes.
-            </p>
+            <div className="min-w-0">
+              <p className="text-[11.5px] leading-relaxed text-[#d9bd82]">
+                <span className="font-semibold uppercase tracking-[0.06em]">DEMO · SIMULATED RESULTS</span>
+                <span className="mx-1.5 opacity-60">—</span>
+                the three detections below come from a local heuristic simulator, not from Clocked. Do not read them as
+                Clocked verdicts, probabilities or findings. The policy engine, the masking pipeline and the review flow
+                are the same code that runs against the live API.
+              </p>
+              <details className="group mt-1">
+                <summary className="cursor-pointer list-none text-[10.5px] font-medium text-[#c9a86a]">
+                  <span className="inline-block text-[8px] transition-transform group-open:rotate-90" aria-hidden="true">
+                    ▶
+                  </span>{' '}
+                  Why is this a demo and not the live API?
+                </summary>
+                <p className="mt-1 max-w-[110ch] text-[10.5px] leading-relaxed text-[#b9a073]">
+                  The integration is real and verified: on 2026-10-30 all three endpoints returned live detections
+                  (injection 0.9957 critical, six personal-data entities, a malicious script at 0.9956) and those exact
+                  responses are committed as test fixtures. What fails from this host is transport: the service edge
+                  answers non-browser clients with an HTML bot challenge (HTTP 403, <code className="mono">cf-mitigated: challenge</code>)
+                  before authentication, while a browser on the same IP is served normally. The product calls Clocked
+                  from the server only, so it reports the failure and holds the content instead of guessing. Adding{' '}
+                  <code className="mono">CLOCKED_API_KEY</code> to <code className="mono">.env.local</code> and
+                  restarting switches the workbench to live mode; it never falls back to this simulator on its own.
+                </p>
+              </details>
+            </div>
           </div>
         </div>
       ) : null}
@@ -398,6 +467,11 @@ export function Workbench({
                 </span>
 
                 <div className="ml-auto flex items-center gap-1.5">
+                  {busy ? (
+                    <span className="mono text-[10.5px] text-fg-3" aria-live="polite">
+                      {(elapsed / 1000).toFixed(1)}s
+                    </span>
+                  ) : null}
                   <button
                     type="button"
                     className="btn btn-quiet h-8 px-2.5 text-[11.5px]"
@@ -412,6 +486,12 @@ export function Workbench({
                     <XIcon size={13} />
                     Clear
                   </button>
+                  {busy ? (
+                    <button type="button" className="btn h-8 px-2.5 text-[11.5px]" onClick={cancel}>
+                      <XIcon size={13} />
+                      Cancel
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="btn btn-primary h-8 px-3 text-[11.5px]"
@@ -450,7 +530,7 @@ export function Workbench({
             ) : null}
 
             <div ref={resultRef}>
-              <ContentView result={result} text={text} />
+              <ContentView result={result} text={text} focus={focus} />
             </div>
 
             {result ? (
@@ -458,7 +538,7 @@ export function Workbench({
                 <div className="flex items-center justify-between">
                   <h2 className="text-[12px] font-semibold tracking-tight text-fg-2">Detection stages</h2>
                   <span className="text-[10.5px] text-fg-3">
-                    {result.stages.guard.mode === 'live' ? 'Live Clocked API' : 'Mock mode · synthetic'} ·{' '}
+                    {result.stages.guard.mode === 'live' ? 'Live Clocked API' : 'Simulated · no API call'} ·{' '}
                     {result.input.characters.toLocaleString()} chars
                   </span>
                 </div>
@@ -481,6 +561,13 @@ export function Workbench({
                 ) : (
                   <InspectCard stage={result.stages.inspect} thresholds={result.policy.thresholds} sourceText={text} />
                 )}
+
+                <EvidencePanel
+                  result={result}
+                  text={text}
+                  focusId={focus?.id ?? null}
+                  onLocate={(row) => setFocus({ start: row.start, end: row.end, id: row.id })}
+                />
 
                 {result.warnings.length > 0 ? (
                   <ul className="space-y-1 rounded-lg border border-line bg-panel px-3.5 py-2.5">
@@ -510,8 +597,8 @@ export function Workbench({
                 result={result}
                 review={review}
                 busy={busy || reviewBusy}
-                onApprove={() => void submitReview('approve')}
-                onReject={() => void submitReview('reject')}
+                onApprove={(note) => void submitReview('approve', note)}
+                onReject={(note) => void submitReview('reject', note)}
                 onRecheck={() => void analyze()}
                 onExport={exportJson}
                 onPrint={() => setReportOpen(true)}

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { recordReview } from '@/lib/audit';
+import { MIN_REJECT_NOTE, normalizeNote, noteSatisfiesAction } from '@/lib/review';
 import type { Decision, ReviewAction } from '@/lib/types';
 
 export const runtime = 'nodejs';
@@ -46,10 +47,19 @@ export async function POST(request: Request) {
     );
   }
 
-  // A reviewer note is optional and must stay short: it is stored, and could
-  // otherwise become a place for someone to paste the sensitive content itself.
-  const note =
-    typeof body.note === 'string' && body.note.trim().length > 0 ? body.note.trim().slice(0, 280) : null;
+  // A reviewer note is optional to approve and required to reject. It is stored,
+  // so it is length-capped: the note is a reason, not a place to paste the
+  // sensitive content itself.
+  const note = normalizeNote(body.note);
+  if (!noteSatisfiesAction(body.action as ReviewAction, note)) {
+    return NextResponse.json(
+      {
+        error: 'note_required',
+        message: `A rejection must record a reason of at least ${MIN_REJECT_NOTE} characters.`,
+      },
+      { status: 400 },
+    );
+  }
 
   const event = recordReview({
     runId: body.runId,
