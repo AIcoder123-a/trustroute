@@ -1,0 +1,50 @@
+# Does a cloud egress get the same 403, or a real answer?
+#
+# This is the cheapest way to find out whether the browser-integrity challenge
+# that blocks server-side calls from the build machine also blocks a normal
+# datacenter egress — without deploying anything and without spending money.
+#
+# Run it from the repository's Actions tab ("Run workflow"). It makes exactly
+# three paid calls (12–19 credits) against the account that owns the secret.
+#
+# Setup, once:
+#   1. Settings → Secrets and variables → Actions → New repository secret
+#   2. Name: CLOCKED_API_KEY, value: the key. It is never printed by the script.
+#
+# Read the result with docs/DEPLOYMENT.md §3.
+
+name: live-check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    name: three real Clocked calls from a GitHub-hosted runner
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Ask Clocked for three detections
+        env:
+          CLOCKED_API_KEY: ${{ secrets.CLOCKED_API_KEY }}
+        run: npm run verify:live
+
+      - name: Explain a failure
+        if: failure()
+        run: |
+          echo "::notice::If the output is 403 with cf-mitigated: challenge, the rule is not about the"
+          echo "::notice::build machine's network — see docs/DEPLOYMENT.md §3, row 2."

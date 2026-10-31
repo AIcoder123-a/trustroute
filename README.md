@@ -165,8 +165,8 @@ lib/report           pure export builder: no raw text, no entity values, no over
 
 | Layer | Count | Command |
 | --- | --- | --- |
-| Unit / integration (vitest) | 61 assertions in 8 files | `npm test` |
-| Browser (Playwright, desktop + mobile) | 16 assertions | `npm run test:e2e` |
+| Unit / integration (vitest) | 101 assertions in 13 files | `npm test` |
+| Browser (Playwright, desktop + mobile) | 24 assertions | `npm run test:e2e` |
 
 The browser suite walks the real flow: load a case → screen → read the decision → inspect the masked copy →
 approve → export JSON → print sheet, at 1440×900 and 390×844. Details and results: `docs/TEST_REPORT.md`.
@@ -182,7 +182,12 @@ approve → export JSON → print sheet, at 1440×900 and 390×844. Details and 
   `CLOCKED_MODE=live` on this machine reports `edge_interstitial` and falls closed to REVIEW — never PASS.
   Exempting the endpoint from the browser-integrity challenge is a provider-side change. See
   `docs/API_INTEGRATION.md` §6.1.
-- Mock mode is a heuristic simulator, not a detector. It exists so the flow can be reviewed without a key.
+- **The simulated mode is labelled as such everywhere**, on purpose and on every surface: a
+  `DEMO · SIMULATED RESULTS` banner with an expandable explanation, a `MOCK` tag per stage card, a
+  `SIMULATED` badge in the header, and `dataSources` / `disclaimers` / the printable sheet in the export.
+  It exists so the review flow can be exercised without a key, and it is never presented as Clocked
+  output. There is no code path that falls back to it after a failed live call.
+- The simulated detector is a heuristic simulator, not a detector.
 - The audit trail and rate limiter are per-process and in-memory: correct for a demo, not for a fleet.
 - No authentication. A public deployment needs a gate in front of it.
 - Content is capped (16k prose / 32k script) and rejected rather than truncated, so a screen always covers
@@ -198,6 +203,7 @@ approve → export JSON → print sheet, at 1440×900 and 390×844. Details and 
 | `docs/ARCHITECTURE.md` | request lifecycle, decision table, redaction algorithm |
 | `docs/TEST_REPORT.md` | test matrix, results, evidence |
 | `docs/SECURITY_NOTES.md` | threat model, data retention, deliberate weaknesses |
+| `docs/DEPLOYMENT.md` | what a deploy needs, why a cloud host may hit the same 403, and the two cheap ways to find out before deploying |
 | `docs/SUBMISSION_DRAFT.md` | entry-form copy and video script |
 | `AGENTS.md` | rules for continuing the work |
 

@@ -24,6 +24,11 @@ const config = [
       eqeqeq: ['error', 'smart'],
     },
   },
+  {
+    // The scripts are command-line tools; their output is the interface.
+    files: ['scripts/**/*.mjs'],
+    rules: { 'no-console': 'off' },
+  },
 ];
 
 export default config;

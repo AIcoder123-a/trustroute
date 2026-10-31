@@ -22,6 +22,7 @@ app/
   api/status/route.ts   GET  — reports mode + limits, never the key
   api/audit/route.ts    GET  — last 10 content-free audit records (session trail)
 components/             UI (client components); Workbench.tsx orchestrates
+  EvidencePanel.tsx     passage-level evidence for Guard + Inspect, click to locate in the source
   SessionTrail.tsx      content-free run history shown in the left rail
 lib/
   clocked/              transport adapters
@@ -29,8 +30,10 @@ lib/
     mock.ts             labelled heuristic simulator (NOT Clocked)
     normalize.ts        defensive response parsing
     index.ts            stage runner, latency, skipping
-  policy.ts             deterministic decision engine (pure)
+  policy.ts             deterministic decision engine (pure) + the rule trace it reports
   redact.ts             builds the masked copy from Protect spans (pure)
+  evidence.ts           one row per detector finding, with line numbers (pure)
+  review.ts             review-note contract shared by the UI and the route (pure)
   highlight.ts          source-view segments (pure)
   pipeline.ts           detect → mask → decide, plus audit
   cases.ts              8 synthetic demo cases + per-type deployment policy
@@ -45,6 +48,8 @@ e2e/                    playwright, desktop + mobile
 docs/                   rules, API research, architecture, test report, submission drafts
 scripts/live-smoke.mjs  one real call per endpoint through the SDK; use with a key
 scripts/live-verify.mjs  the same three calls through Chromium; verification harness, never imported by app/
+scripts/collect-diagnostics.mjs  credential-free edge diagnostics for a provider escalation (output in .local/)
+.github/workflows/live-check.yml  manual-trigger run of verify:live on a GitHub runner, to test a cloud egress
 ```
 
 ## 3. Hard rules (do not break)
@@ -62,7 +67,7 @@ scripts/live-verify.mjs  the same three calls through Chromium; verification har
 6. **Demo data stays synthetic.** `example.com` / `example.net` / 555 phone ranges only. No real
    person's data, ever, in cases, fixtures, tests, screenshots or docs.
 7. **No API key, token, account name or private conversation in this repository.** Not in docs, not in
-   commit messages. `tests/fixtures/` holds real API responses: they must stay synthetic content, and they
+   commit messages. Vendor correspondence and diagnostics live in `.local/` and are git-ignored. `tests/fixtures/` holds real API responses: they must stay synthetic content, and they
    are checked for credential-shaped strings by `tests/live-contract.test.ts`.
 8. **Do not push, deploy, publish or submit without the owner's explicit instruction.** This repo is
    local until the owner says otherwise.
@@ -79,6 +84,7 @@ npm run test:e2e     # playwright desktop + mobile (starts its own server on :31
 npm run verify       # typecheck + lint + test + build
 npm run verify:live  # three real Clocked calls through the SDK; needs CLOCKED_API_KEY
 npm run verify:live:browser  # the same calls through Chromium (see §6 on the edge challenge)
+node scripts/collect-diagnostics.mjs  # no credential; writes .local/support/ (git-ignored)
 ```
 
 Playwright downloads browsers once: `npx playwright install chromium`.
@@ -99,11 +105,11 @@ Playwright downloads browsers once: `npx playwright install chromium`.
 | Area | State |
 | --- | --- |
 | Build, typecheck, lint | clean, 0 warnings |
-| Unit/integration tests | 75 passing (9 files, incl. contract tests against recorded real responses) |
-| Browser tests | 16 passing (8 tests × desktop + mobile) |
+| Unit/integration tests | 101 passing (13 files, incl. contract tests against recorded real responses, a policy-trace suite and a credential-hygiene suite) |
+| Browser tests | 24 passing (12 tests × desktop + mobile) |
 | Live Clocked detections | **verified**: `/injection` 0.9957 critical, `/pii` 6 entities incl. both custom kinds, `/script` 0.9948 malicious. 12 credits / $0.0024 per full screen |
 | Live path from the server | **blocked**: the edge challenges non-browser clients (`403 cf-mitigated: challenge`) before authentication; Chromium from the same IP succeeds. Falls closed to REVIEW with `edge_interstitial` |
-| Deployment | not deployed |
+| Deployment | not deployed; feasibility and the pre-deploy experiment are in `docs/DEPLOYMENT.md` |
 | Git remote | none; local commits only |
 
 Open items and blockers are tracked in `docs/IMPLEMENTATION_PLAN.md` §6–7.

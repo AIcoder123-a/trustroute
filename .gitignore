@@ -16,6 +16,10 @@ playwright-report/
 blob-report/
 .playwright/
 
+# local support material: diagnostics, vendor correspondence, screenshots of
+# external systems. Collected for the account owner, never part of the project.
+.local/
+
 # misc
 *.log
 .DS_Store

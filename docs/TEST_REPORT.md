@@ -29,8 +29,8 @@ vitest 5.0.5, re-verified with the full suite.
 ### 2.1 Unit and integration (vitest)
 
 ```
-Test Files  9 passed (9)
-     Tests  75 passed (75)
+Test Files  13 passed (13)
+     Tests  101 passed (101)
 ```
 
 | File | Assertions | Covers |
@@ -43,6 +43,10 @@ Test Files  9 passed (9)
 | `tests/validate.test.ts` | 10 | empty/whitespace, null bytes, unknown content type, prose vs script limits, policy length cap, non-object body |
 | `tests/ratelimit.test.ts` | 3 | limit enforcement, per-caller buckets, window refill |
 | `tests/error-classification.test.ts` | 6 | an HTML interstitial is never reported as a rejected key; genuine 401/403, timeout, connection failure and unknown errors each map to the right stage status; HTML never reaches the UI |
+| `tests/policy-trace.test.ts` | 7 | every threshold comparison is listed with the value it used; the critical-severity override is reported separately from the block line; a failed stage is `failed`, not `pass`; a missing masked copy is a failure |
+| `tests/evidence.test.ts` | 7 | one row per finding in document order, excerpts taken from the text, 1-based line numbers, unplaceable spans kept and flagged instead of dropped |
+| `tests/review-note.test.ts` | 5 | rejection requires a reasoned note, approval does not, notes are trimmed and capped at 280 |
+| `tests/harness-hygiene.test.ts` | 7 | the verification harness attaches the credential out of band and never inside page JavaScript; no `NEXT_PUBLIC_*` anywhere; the key is read in exactly two server-only modules |
 | `tests/live-contract.test.ts` | 11 | recorded **real** 200 responses (`tests/fixtures/clocked-*.json`) normalise into the domain types; every span slices to its value; the rebuilt masked copy equals Clocked's own `anonymized_text`; Inspect offsets are document offsets and produce lines 1–4; the fixtures contain no credential |
 
 The two invariants that matter most, both enforced by tests:
@@ -55,7 +59,7 @@ The two invariants that matter most, both enforced by tests:
 ### 2.2 Browser (Playwright)
 
 ```
-16 passed (24.2s)   # 8 scenarios × desktop 1440×900 and mobile 390×844
+24 passed (34.6s)   # 12 scenarios × desktop 1440×900 and mobile 390×844
 ```
 
 | Scenario | Assertions |
@@ -68,6 +72,10 @@ The two invariants that matter most, both enforced by tests:
 | Export | download event, filename `trustroute-*.json`, parsed JSON has schema + transport `mock`, and no raw email or name |
 | Review sheet | dialog opens, contains disclaimers, Escape closes |
 | Empty input | analyse button stays disabled for whitespace-only input |
+| Evidence | a Guard passage is listed with its line number; clicking it selects it (`aria-pressed`) and switches to the source view, where the corresponding `mark` is rendered |
+| Rule trace | expanding the trace shows the actual comparisons ("Injection probability vs block line", "Guard returned a usable result") |
+| Rejection needs a reason | Reject is disabled on an empty note; after typing one the rejection is recorded and the badge becomes `BLOCK` |
+| Mask map | the forwarded view lists each kind, its replacement token and its count |
 
 ## 3. Behavioural matrix
 
@@ -187,7 +195,23 @@ operator which variable is missing. Both paths state that nothing was screened a
   WCAG AA for body text; decision colours are paired with a text label, never colour alone.
 - Empty, loading, error and success states all render distinct, actionable UI.
 
-## 7. Known gaps in this report
+## 7. Credential-handling review of the verification harness
+
+Requested explicitly, so it is answered explicitly rather than implied by "the scripts print no secrets".
+
+| Question | Answer |
+| --- | --- |
+| Where does the request originate when the browser harness succeeds? | A headless Chromium launched by `scripts/live-verify.mjs`. Page JavaScript builds the body and calls `fetch` on `https://clocked.rezolve.ai/clocked/*` (same origin as the page it navigated to); the `Authorization` header is added in Node through `page.route`, on the CDP side, as the request leaves the browser. |
+| Did the API key ever appear in browser JavaScript, page source or a browser network log? | **It did, in the first version of the harness**: the key was passed as an argument to `page.evaluate`, so it lived in the JS heap of the page on `clocked.rezolve.ai` and in the request header. Fixed on 2026-10-31 by moving the header to `page.route`; the page now issues the request with no credential and cannot read one. The key still appears on the wire, as it must for any authenticated call. |
+| Was there ever a HAR, trace, screenshot or log containing credentials? | No. The harness writes nothing to disk except fixtures when asked, and those fixtures are API responses, not requests. `test-results/` and `.next/` were scanned for the key value: no hits. `playwright.config.ts` keeps traces only for e2e failures against `localhost`. |
+| Is there any path where the product calls Clocked directly from the browser, bypassing the server? | No. `scripts/` is not imported by `app/` or `components/`; `lib/config.ts` throws if it is ever evaluated with a `window`; `tests/harness-hygiene.test.ts` asserts both, and that the key is read in exactly `lib/config.ts` and `lib/clocked/live.ts`. |
+| Impact and rotation advice | Scope was one local headless browser on the owner's machine, a page served by the key's own provider, no retained artifacts. Rotate the key if an older copy of the harness was ever run with DevTools open, with tracing on, or on a machine the owner does not control. |
+
+The harness is also constrained in what it will *not* do: it does not spoof a browser TLS fingerprint for a
+non-browser client, does not solve or automate the challenge, and does not proxy product traffic through
+the browser. It launches a real Chromium, which the provider's own site is meant to serve.
+
+## 8. Known gaps in this report
 
 | Gap | Why | Consequence |
 | --- | --- | --- |
@@ -196,3 +220,4 @@ operator which variable is missing. Both paths state that nothing was screened a
 | No cross-browser run | Chromium only | Firefox/WebKit untested; no browser-specific APIs are used |
 | No accessibility audit tool | not installed | manual checks above only; axe/Lighthouse is a follow-up |
 | Session-trail endpoint has no isolated unit test | its output is `listAudit()`, which is already exercised by `pipeline.test.ts` | the route itself is covered by the manual pass and the browser suite |
+| No deployed environment | deployment needs the owner's authorisation | whether a cloud egress passes the edge is unmeasured; `docs/DEPLOYMENT.md` §3 gives the two cheap ways to measure it |
