@@ -17,6 +17,21 @@
  * It is a verification harness, not a transport: the product always calls Clocked
  * from the server through `clocked-sdk`. Nothing here is imported by the app.
  *
+ * ## Where the credential lives
+ *
+ * The key is read from the environment in Node and never handed to the page.
+ * The page issues a plain same-origin `fetch` with no `Authorization` header;
+ * the header is attached on the CDP side, in `page.route`, as the request leaves
+ * the browser. So:
+ *
+ *   - no page JavaScript (ours or the provider's) can read the key;
+ *   - a heap snapshot of the page does not contain it;
+ *   - the key appears only in this Node process and in the request header that
+ *     Chromium puts on the wire.
+ *
+ * An earlier version passed the key into `page.evaluate`, which put it in the
+ * page's JavaScript heap. See docs/SECURITY_NOTES.md §7.
+ *
  * Options
  *   --write-fixtures   rewrite tests/fixtures/clocked-*.json with these responses
  *
@@ -82,7 +97,25 @@ const SAMPLES = {
 
 const writeFixtures = process.argv.includes('--write-fixtures');
 const browser = await chromium.launch({ headless: true });
-const page = await (await browser.newContext()).newPage();
+const context = await browser.newContext();
+const page = await context.newPage();
+
+/**
+ * The only place the credential is attached. `route.continue` merges headers in
+ * the browser's network stack, so page JS never sees this value.
+ */
+let authorized = 0;
+await page.route('**/clocked/**', async (route) => {
+  const request = route.request();
+  if (request.method() !== 'POST') {
+    await route.continue();
+    return;
+  }
+  authorized += 1;
+  await route.continue({
+    headers: { ...request.headers(), authorization: `Bearer ${key}` },
+  });
+});
 
 try {
   await page.goto(`${BASE}/apis`, { waitUntil: 'domcontentloaded', timeout: 45_000 });
@@ -96,13 +129,14 @@ const rows = [];
 let failures = 0;
 
 for (const [endpoint, body] of Object.entries(SAMPLES)) {
+  // Note the argument list: path and payload only. No credential crosses into
+  // the page, by construction rather than by care.
   const result = await page.evaluate(
-    async ([path, payload, apiKey]) => {
+    async ([path, payload]) => {
       const started = performance.now();
       const response = await fetch(path, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
           Accept: 'application/json',
           'Idempotency-Key': crypto.randomUUID(),
@@ -118,7 +152,7 @@ for (const [endpoint, body] of Object.entries(SAMPLES)) {
         text: await response.text(),
       };
     },
-    [`${ENDPOINT_PATH}/${endpoint}`, body, key],
+    [`${ENDPOINT_PATH}/${endpoint}`, body],
   );
 
   let data = null;
@@ -181,6 +215,7 @@ for (const row of rows) {
 const totalCredits = rows.reduce((sum, row) => sum + Number(row.credits ?? 0), 0);
 const totalCost = rows.reduce((sum, row) => sum + Number(row.costUsd ?? 0), 0);
 console.log(`\ntotal: ${totalCredits} credits, $${totalCost.toFixed(6)}`);
+console.log(`requests authorized out-of-band: ${authorized} (0 headers set by page JS)`);
 
 if (failures > 0) {
   console.error(`\n${failures} of 3 endpoints did not answer.`);

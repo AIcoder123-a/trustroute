@@ -31,7 +31,8 @@ before the agent does.
   rather than assumed: `git check-ignore` matches `.env.local`, and the live key value appears in no
   tracked file and in no commit in `git log --all -p`.
 - Both verification scripts print field *structure*, not the key, not the raw content; the key is read
-  inside the script and never written to `stdout`, a file or a fixture.
+  inside the script and never written to `stdout`, a file or a fixture. Neither script writes a HAR file,
+  a Playwright trace or a screenshot. See §7 for where the credential sits during a browser-based check.
 - `tests/fixtures/` contains real API responses. They were recorded from synthetic samples, and
   `tests/live-contract.test.ts` asserts they carry no `Authorization`, `Bearer` or `CLOCKED_API_KEY`
   string.
@@ -87,14 +88,49 @@ terms. This demo does not accept real user content: all eight cases are syntheti
    and prevents accidental cost; larger inputs are rejected with a clear message rather than truncated
    (truncation would silently change what was screened).
 
-## 7. Dependency and supply chain
+## 7. The verification harness and the credential
+
+`npm run verify:live:browser` (`scripts/live-verify.mjs`) drives Chromium because the service edge
+challenges non-browser clients. That raised a fair question: **where is the key while that runs?**
+
+**Now: only in the Node process, plus the request header on the wire.** The page issues a plain
+same-origin `fetch` with no `Authorization` header; the header is attached in `page.route`, on the CDP
+side, as the request leaves the browser. Consequences:
+
+| Question | Answer |
+| --- | --- |
+| Does page JavaScript ever receive the key? | No. `page.evaluate` is called with `[path, payload]` only. |
+| Can a script on `clocked.rezolve.ai` read it? | No — it is not in the page's JS heap, and `fetch` cannot be made to expose request headers set by the network stack. |
+| Does it appear in the browser's network log? | Yes, as the `Authorization` header of the outgoing request. That is unavoidable for any authenticated HTTP call and is the same exposure as the SDK path. |
+| Is there a HAR, trace, screenshot or log containing it? | No. The script writes no artifacts; `playwright.config.ts` records traces only for e2e against `localhost`, and `test-results/` was scanned for the key value: no hits. |
+| Does the product ever call Clocked from the browser? | No. `scripts/` is a harness; `app/` and `components/` never import it, and `lib/config.ts` throws in a browser context. |
+
+**Before 2026-10-31 this was not true, and it is worth recording rather than quietly fixing.** The first
+version of the harness passed the key into `page.evaluate`, so the credential sat in the JavaScript heap
+of the page on `clocked.rezolve.ai`. Impact was limited — a local headless browser on the owner's
+machine, a page served by the key's own provider, no HAR or trace retained, no third-party script on
+that page — but it was still a credential inside a page context, which is one XSS or one saved heap
+snapshot away from disclosure. Fixed by moving the header to `page.route`; verified by re-running the
+three calls (all `200`, identical verdicts). `tests/harness-hygiene.test.ts` now fails if the harness
+ever hands the key to the page again.
+
+Rotating the key is therefore optional rather than urgent. Rotate it if you ever ran an older copy of
+the harness with a DevTools window open, with tracing enabled, or on a machine you do not control.
+
+**What the harness is not allowed to do:** it does not spoof a browser TLS fingerprint for a non-browser
+client, does not solve or automate the challenge, and does not proxy product traffic through the
+browser. It launches a real Chromium, which the provider's own site is meant to serve.
+
+## 8. Dependency and supply chain
 
 - Clocked SDK pinned to `0.7.0`; the unrelated npm package `clocked` was checked and rejected
   (`npm view` on 2026-10-30 showed it is "an analog clock using momentjs").
-- `npm audit` was not run as a gate; run `npm audit --omit=dev` before deploying and read the output.
+- `npm audit` reports **0 vulnerabilities** as of 2026-10-31 (Next 16.4.3, React 19.3.1, vitest 5.0.5
+  after two advisories were fixed by upgrading). Re-run it before deploying; a clean run today says
+  nothing about tomorrow.
 - No runtime dependency beyond `next`, `react`, `react-dom` and `clocked-sdk`. Icons are inline SVG.
 
-## 8. Response headers
+## 9. Response headers
 
 Set in `next.config.ts`: `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`,
 `X-Frame-Options: DENY`, `Permissions-Policy` disabling camera/microphone/geolocation, and
@@ -104,7 +140,7 @@ A Content-Security-Policy is **not** set, because a wrong one breaks the app and
 theatre. Next.js needs `unsafe-inline` for its inline bootstrap script unless you adopt nonces; that
 is a follow-up, listed rather than faked.
 
-## 9. Reporting
+## 10. Reporting
 
 This is a challenge entry, not a production service. If you find a vulnerability in TrustRoute, open an
 issue on the repository once it is public; do not test against any deployment with real data, because
