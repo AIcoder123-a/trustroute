@@ -851,7 +851,7 @@ function ContextBar({
   onLoadCase: (item: DemoCase) => void;
 }) {
   return (
-    <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+    <div id="guide" className="mb-3 flex scroll-mt-[72px] flex-wrap items-center gap-x-3 gap-y-1">
       <h1 className="text-[13px] font-semibold tracking-tight text-fg-2">
         Screen untrusted content before an agent reads it
       </h1>
