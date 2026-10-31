@@ -5,11 +5,12 @@
   --color-panel: #101216;
   --color-panel-2: #15181d;
   --color-panel-3: #1a1e24;
-  --color-line: #1e2228;
-  --color-line-strong: #2b313a;
-  --color-fg: #eceef1;
-  --color-fg-2: #a3aab3;
-  --color-fg-3: #6f7781;
+  --color-line: #21252c;
+  --color-line-strong: #2f3640;
+  --color-fg: #f1f3f5;
+  --color-fg-2: #b7bec8;
+  /* Meta text sits on #101216 at ~12px; #6f7781 measured ~3.6:1, below AA. */
+  --color-fg-3: #8a929d;
   --color-accent: #3ecfb2;
   --color-accent-soft: #12332e;
   --color-pass: #35c77b;
@@ -87,7 +88,13 @@
   .panel {
     background-color: var(--color-panel);
     border: 1px solid var(--color-line);
-    border-radius: 14px;
+    border-radius: 12px;
+  }
+
+  /* A section that reads as a group without drawing another box. */
+  .inset {
+    background-color: var(--color-panel-2);
+    border-radius: 8px;
   }
 
   .panel-flat {
@@ -98,9 +105,16 @@
   .label {
     font-size: 10.5px;
     line-height: 1.2;
-    letter-spacing: 0.09em;
+    letter-spacing: 0.085em;
     text-transform: uppercase;
     font-weight: 600;
+    color: var(--color-fg-3);
+  }
+
+  /* Secondary prose: one step up from .label, one down from body copy. */
+  .note {
+    font-size: 11.5px;
+    line-height: 1.62;
     color: var(--color-fg-3);
   }
 

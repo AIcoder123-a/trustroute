@@ -205,7 +205,9 @@ export function buildReport(result: AnalyzeResponse, review: ReviewEvent | null)
       })),
       spansDropped: result.redaction.dropped.length,
       spansRejected: result.redaction.rejected.length,
-      comparisonWithClocked: result.redaction.apiComparison,
+      // A mock run cannot be "compared with Clocked": there is no Clocked copy.
+      comparisonWithClocked:
+        result.mode === 'mock' ? 'not_compared_mock' : result.redaction.apiComparison,
     },
     review: review
       ? {

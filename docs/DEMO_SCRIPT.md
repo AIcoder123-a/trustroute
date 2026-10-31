@@ -35,7 +35,8 @@ Wait for the result, then move the cursor down the three regions as you speak.
 > critical. Protect already found an email address in the body and masked it. The policy blocks: this
 > content never reaches the agent, and the reason is on screen, not in a log."
 
-Point at the highlighted span in the source view and at the evidence quotes in the Guard card.
+Point at the highlighted span in the source view, then at the Evidence list directly under it — one
+click on a passage selects it in the source above.
 
 ## Scene 3 — Personal data: mask, then forward (0:55–1:25)
 
@@ -46,7 +47,8 @@ Point at the highlighted span in the source view and at the evidence quotes in t
 > what would be forwarded. This one passes, because masking was possible and nothing was above the block
 > line."
 
-Toggle to *As received* and back, so the before/after is visible.
+Toggle to *As received* and back, so the before/after is visible, and point at the mask-map chips
+(`email → <EMAIL> ×1`) — clicking one jumps back to the exact span it replaced.
 
 ## Scene 4 — The interesting case: a script a human should see (1:25–2:00)
 
@@ -89,7 +91,7 @@ Click **Approve**, let the "reviewer override" line appear.
 | # | Time | Action | Must be legible |
 | --- | --- | --- | --- |
 | 1 | 0:00 | idle workbench | H1, mock/live badge, case rail |
-| 2 | 0:15 | load case 3, screen | BLOCK badge, 95.8% injection, evidence quotes |
+| 2 | 0:15 | *Screen the blocked example* (single click) | BLOCK badge, 95.8% injection, evidence passages |
 | 3 | 0:55 | load case 2, screen, forwarded copy | `<PERSON>`, `<PHONE>`, `<EMAIL>`, `<ADDRESS>` |
 | 4 | 1:25 | load case 6, screen, approve | REVIEW badge, flagged lines, override note |
 | 5 | 2:00 | open review sheet, then export JSON | report rows, thresholds, disclaimers |

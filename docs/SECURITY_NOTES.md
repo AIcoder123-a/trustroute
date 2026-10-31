@@ -114,6 +114,19 @@ snapshot away from disclosure. Fixed by moving the header to `page.route`; verif
 three calls (all `200`, identical verdicts). `tests/harness-hygiene.test.ts` now fails if the harness
 ever hands the key to the page again.
 
+**Re-audited 2026-10-31, after the harness was rewritten.** Four questions, answered from the code and
+from a run:
+
+| Residual path | Exposure | Mitigation in place |
+| --- | --- | --- |
+| The `Authorization` header crosses the CDP WebSocket between Playwright and Chromium (loopback) | Anything recording that channel — a Playwright trace, a proxy in front of CDP, a remote-debugging port exposed beyond loopback — would see the header | The harness starts no trace, writes no HAR, and connects to a browser Playwright launched itself on an ephemeral loopback port. `playwright.config.ts` traces only the e2e suite against `localhost`. |
+| Page-side code (the provider's own scripts) | None: the header is merged in the network stack by `route.continue`, so it is not readable by `fetch`, `XHR` or any script | Verified by the design; a compile-time test keeps `page.evaluate` free of the value |
+| The document itself | A future edit that injects the key into the DOM would not be caught by the argument-list test | The harness now reads `page.content()` from Node after the calls and exits non-zero (`4`) if the value appears anywhere in the document |
+| Treating a browser `200` as proof the product works | A demo could claim "live" on the strength of a browser call the product never makes | The harness prints, on every run: *"This proves the key works from a browser. It does not verify the server-side path — run `npm run verify:live` for that."* |
+
+The one thing this cannot remove is that the key must exist in the Node process to be attached at all.
+That is true of any client, including the SDK.
+
 Rotating the key is therefore optional rather than urgent. Rotate it if you ever ran an older copy of
 the harness with a DevTools window open, with tracing enabled, or on a machine you do not control.
 

@@ -55,7 +55,7 @@ export function StatusText({ status, label }: { status: StageStatus; label: stri
 }
 
 /**
- * A probability meter with the endpoint threshold and the policy block line
+ * A probability meter with the detector line and the policy block line
  * marked, so the reader can see *why* a number became a decision.
  */
 export function ProbabilityMeter({
@@ -63,11 +63,14 @@ export function ProbabilityMeter({
   threshold,
   blockAt,
   tone,
+  thresholdLabel = 'reference line',
 }: {
   value: number;
   threshold: number;
   blockAt: number;
   tone: 'block' | 'review';
+  /** What the first marker is: the endpoint's own threshold, or the simulator's. */
+  thresholdLabel?: string;
 }) {
   const clamped = Math.min(1, Math.max(0, value));
   return (
@@ -79,7 +82,7 @@ export function ProbabilityMeter({
       <div
         className="absolute top-0 h-full w-px bg-fg/40"
         style={{ left: `${threshold * 100}%` }}
-        title={`Endpoint threshold ${pct(threshold)}`}
+        title={`${thresholdLabel} ${pct(threshold)}`}
       />
       <div
         className="absolute top-0 h-full w-px bg-fg/25"

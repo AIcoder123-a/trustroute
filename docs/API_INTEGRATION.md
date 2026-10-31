@@ -165,12 +165,30 @@ Systematic narrowing, one variable at a time:
 | `curl` with the full browser header set (`sec-ch-ua`, `sec-fetch-*`, `Origin`, `Referer`, `Accept-Language`) | `403`, challenge |
 | `curl --noproxy '*'` (bypassing the local proxy) | `403`, challenge |
 | `curl` to `/`, `/account`, `/apis`, and `GET /clocked/pii` | `403`, challenge — the whole host, not one endpoint |
-| Headless **Chromium** from the same machine | `200`, page renders, no `cf_clearance` cookie needed |
+| Headless **Chromium** from the same machine | `200` on the docs page, and an unauthenticated `POST /clocked/pii` answered `401` — the request reached the API, it was not challenged |
 
-So the discriminating variable is the **client's TLS/HTTP fingerprint**, not the network path, not the
-method, not the path, and certainly not the credential: the same IP, the same minute, the same key —
-allowed for Chromium, challenged for `curl` and for Node. Cloudflare calls this a managed challenge; the
-practical consequence is that an API-only client is treated as automated traffic.
+**What that establishes.** Not the credential (an unauthenticated request is refused identically), not
+the method or the path (the whole host answers the same way), and not the request body (the browser sent
+byte-identical JSON).
+
+**What it does not establish — corrected 2026-10-31.** An earlier version of this section named the
+TLS/HTTP fingerprint as *the* cause. That was a hypothesis presented as a measurement. Three
+explanations still fit the observations and the evidence collected so far does not separate them:
+
+1. **A client-integrity rule.** The edge scores the TLS/HTTP/JavaScript profile of the connection and
+   challenges anything that does not look like a browser. This remains the most economical explanation,
+   but it is not proven.
+2. **A different egress path.** Chromium may use the Windows system proxy while Node and `curl --noproxy`
+   do not. Measured 2026-10-31 (`scripts/egress-compare.mjs`): Chromium reached the API both with its
+   default proxy configuration and with the proxy disabled, so a proxy is not *required* for the browser
+   to pass. That weakens this explanation without eliminating it.
+3. **Per-POP behaviour.** The challenge came back from `-SEA` for Node and `curl`; Chromium's requests
+   were answered from `-CMH`. Different Cloudflare POPs can carry different rules and different egress
+   addresses, so the "same IP, same minute" phrasing used earlier in this project was never verified and
+   should not be repeated.
+
+The practical consequence is unchanged and observable: an API-only client is treated as automated
+traffic, while a real browser on the same machine is not.
 
 **What this means for the product.** `CLOCKED_MODE=live` on this machine produces three
 `edge_interstitial` stage failures, `policy.degraded = true`, reason `detection_incomplete`, decision

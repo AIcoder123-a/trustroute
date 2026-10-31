@@ -42,7 +42,7 @@ test.describe('TrustRoute workbench', () => {
     await expect(page.getByText('Guard · prompt injection')).toBeVisible();
     await expect(page.getByText('Protect · personal data')).toBeVisible();
     await expect(page.getByText('No injection signal')).toBeVisible();
-    await expect(page.getByText('Safe to forward.', { exact: false })).toBeVisible();
+    await expect(page.getByRole('status', { name: /Screening decision/ })).toContainText('Safe to forward.');
   });
 
   test('blocks a classic prompt injection and explains why', async ({ page }) => {
@@ -51,7 +51,7 @@ test.describe('TrustRoute workbench', () => {
 
     await expect(page.getByTestId('decision-badge')).toHaveText(/BLOCK/);
     await expect(page.getByText('Prompt injection detected')).toBeVisible();
-    await expect(page.getByText('Do not forward this content')).toBeVisible();
+    await expect(page.getByRole('status', { name: /Screening decision/ })).toContainText('Do not forward this content');
   });
 
   test('masks personal data and offers a forwarded copy', async ({ page }) => {
@@ -79,6 +79,7 @@ test.describe('TrustRoute workbench', () => {
     await expect(page.getByText(/reviewer override/)).toBeVisible();
     await expect(page.getByText(/Approved internally/)).toBeVisible();
     await expect(page.getByTestId('decision-badge')).toHaveText(/PASS/);
+    await expect(page.getByText(/Approved by a reviewer/)).toBeVisible();
   });
 
   test('exports a JSON report that carries no raw personal data', async ({ page }) => {
@@ -169,6 +170,69 @@ test.describe('TrustRoute workbench', () => {
 
     await page.getByRole('tab', { name: 'Forwarded copy' }).click();
     await expect(page.getByText(/Mask map ·/)).toBeVisible();
-    await expect(page.getByRole('cell', { name: '<EMAIL>' })).toBeVisible();
+    await expect(page.getByRole('button', { name: /<EMAIL>/ })).toBeVisible();
+  });
+  test('never describes a simulated run as Clocked output', async ({ page }) => {
+    await page.goto('/');
+    await loadAndScreen(page, CASES.pii);
+
+    const body = await page.locator('body').innerText();
+    expect(body).not.toMatch(/Matches Clocked anonymized_text/);
+    expect(body).not.toMatch(/returned by Clocked/);
+    expect(body).not.toMatch(/endpoint threshold/);
+    expect(body).not.toMatch(/Clocked (Guard|Protect|Inspect) returned/);
+
+    // And it says what it is, at the point where the numbers are.
+    await expect(page.getByText(/nothing compared with Clocked/i)).toBeVisible();
+    await expect(page.getByText('Simulated · no API call').first()).toBeVisible();
+    await expect(page.getByText(/local Guard simulator/i).first()).toBeVisible();
+  });
+
+  test('one click from the landing page produces a decision', async ({ page }) => {
+    await page.goto('/');
+    await page.getByTestId('try-blocked').click();
+    await expect(page.getByTestId('decision-badge')).toHaveText(/BLOCK/, { timeout: 30_000 });
+    await expect(page.getByText('Prompt injection detected').first()).toBeVisible();
+  });
+
+  test('states why a decision was made without opening the rule trace', async ({ page }) => {
+    await page.goto('/');
+    await loadAndScreen(page, CASES.injection);
+
+    await expect(page.getByText('Prompt injection detected').first()).toBeVisible();
+    await expect(page.getByText(/The Gateway blocks content that is trying to redirect the agent/).first()).toBeVisible();
+  });
+
+  test('locates a masked value back in the original text', async ({ page }) => {
+    await page.goto('/');
+    await loadAndScreen(page, CASES.pii);
+
+    await page.getByRole('tab', { name: 'Forwarded copy' }).click();
+    await page.getByRole('button', { name: /<EMAIL>/ }).click();
+
+    await expect(page.getByRole('tab', { name: 'As received' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('mark[data-start]').first()).toBeVisible();
+  });
+
+  test('shows a compact decision bar above the results on a narrow screen', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'mobile', 'narrow-screen only');
+    await page.goto('/');
+    await loadAndScreen(page, CASES.injection);
+
+    const bar = page.getByText(/Do not forward this content/).first();
+    await expect(bar).toBeVisible();
+    await page.getByRole('link', { name: 'Why' }).click();
+    await expect(page).toHaveURL(/#decision$/);
+  });
+
+  test('reports a failed request instead of a decision', async ({ page }) => {
+    await page.goto('/');
+    await page.route('**/api/analyze', (route) => route.abort('failed'));
+    await caseButton(page, CASES.safe).click();
+    await page.getByRole('button', { name: /Screen content/ }).click();
+
+    // Next.js injects its own `role="alert"` route announcer, so match by content.
+    await expect(page.getByRole('alert').filter({ hasText: 'Network error' })).toBeVisible();
+    await expect(page.getByTestId('decision-badge')).toHaveCount(0);
   });
 });

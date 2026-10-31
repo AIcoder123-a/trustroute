@@ -15,6 +15,8 @@ const config = [
       'test-results/**',
       'next-env.d.ts',
       'coverage/**',
+      // Local-only material (diagnostics, vendor mail, throwaway scripts).
+      '.local/**',
     ],
   },
   ...compat.extends('next/core-web-vitals', 'next/typescript'),

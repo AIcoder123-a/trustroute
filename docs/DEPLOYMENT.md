@@ -18,13 +18,15 @@ configured. This document is the analysis that has to exist **before** the owner
 That is the entire list. There is no database, no queue, no storage bucket, no build-time secret. The
 app is one Next.js server plus one API call.
 
-## 2. The blocker is not "the cloud", it is a fingerprint rule
+## 2. The blocker is a client-integrity rule we have not identified
 
 The measured failure from the build machine is an HTML challenge (`403`, `cf-mitigated: challenge`) for
-**non-browser clients**, while a real browser from the same IP and the same minute gets `200`. That is a
-client-fingerprint decision (TLS/HTTP fingerprint, header order, HTTP/2 settings — the things a managed
-challenge looks at), not an IP-reputation decision. The evidence for that distinction is in
-`docs/TEST_REPORT.md` §4.
+**non-browser clients**, while Chromium on the same machine reaches the API layer — its unauthenticated
+`POST` was answered `401`, not challenged. What decides that difference has **not** been established.
+Candidates are a client-integrity rule (TLS/HTTP/JS profile), a different egress path, or per-POP
+behaviour; the measurements that separate them are listed in `docs/API_INTEGRATION.md` §6.1. An earlier
+version of this file called it "a fingerprint decision" as if it were measured — it was not, and the
+support request now asks the provider rather than asserting.
 
 The consequence, stated plainly:
 

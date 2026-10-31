@@ -83,6 +83,13 @@ export function evaluatePolicy(input: PolicyInput): PolicyOutcome {
   const thresholds: PolicyThresholds = { ...DEFAULT_THRESHOLDS, ...input.thresholds };
   const { guard, protect, inspect, redaction, contentType } = input;
 
+  // Which detector produced these numbers. In mock mode no request was made, so
+  // writing "Clocked Guard returned" into a reason would misreport the run.
+  const live = guard.mode === 'live';
+  const guardName = live ? 'Clocked Guard' : 'The local Guard simulator';
+  const protectName = live ? 'Clocked Protect' : 'The local Protect simulator';
+  const inspectName = live ? 'Clocked Inspect' : 'The local Inspect simulator';
+
   const reasons: PolicyReason[] = [];
   const checks: PolicyCheck[] = [];
   let block = false;
@@ -134,7 +141,7 @@ export function evaluatePolicy(input: PolicyInput): PolicyOutcome {
       reasons.push({
         code: 'prompt_injection',
         label: 'Prompt injection detected',
-        detail: `Clocked Guard returned "${guardData.verdict}" at ${pct(probability)} injection probability${
+        detail: `${guardName} returned "${guardData.verdict}" at ${pct(probability)} injection probability${
           guardData.category ? ` (category: ${guardData.category})` : ''
         }${severity ? `, severity ${severity}` : ''}. The Gateway blocks content that is trying to redirect the agent.`,
         severity: 'block',
@@ -145,7 +152,7 @@ export function evaluatePolicy(input: PolicyInput): PolicyOutcome {
       reasons.push({
         code: 'injection_uncertain',
         label: 'Injection signal needs a human',
-        detail: `Clocked Guard returned "${guardData.verdict}" at ${pct(
+        detail: `${guardName} returned "${guardData.verdict}" at ${pct(
           probability,
         )} injection probability — above the detection threshold but below the automatic block line of ${pct(
           thresholds.blockInjectionProbability,
@@ -157,7 +164,7 @@ export function evaluatePolicy(input: PolicyInput): PolicyOutcome {
       reasons.push({
         code: 'injection_clear',
         label: 'No injection signal',
-        detail: `Clocked Guard returned "${guardData.verdict}" at ${pct(probability)} injection probability.`,
+        detail: `${guardName} returned "${guardData.verdict}" at ${pct(probability)} injection probability.`,
         severity: 'info',
         source: 'guard',
       });
@@ -239,7 +246,7 @@ export function evaluatePolicy(input: PolicyInput): PolicyOutcome {
       reasons.push({
         code: 'no_pii',
         label: 'No personal data found',
-        detail: 'Clocked Protect returned no entities for this content.',
+        detail: `${protectName} returned no entities for this content.`,
         severity: 'info',
         source: 'protect',
       });
@@ -317,7 +324,7 @@ export function evaluatePolicy(input: PolicyInput): PolicyOutcome {
       reasons.push({
         code: 'malicious_script',
         label: 'Malicious script behaviour',
-        detail: `Clocked Inspect returned "${inspectData.verdict}" at ${pct(malicious)} malicious probability${
+        detail: `${inspectName} returned "${inspectData.verdict}" at ${pct(malicious)} malicious probability${
           inspectData.category ? ` (category: ${inspectData.category})` : ''
         }. The Gateway blocks this script from any agent tool call.`,
         severity: 'block',
@@ -328,7 +335,7 @@ export function evaluatePolicy(input: PolicyInput): PolicyOutcome {
       reasons.push({
         code: 'script_needs_review',
         label: 'Script flagged for human review',
-        detail: `Clocked Inspect returned "${inspectData.verdict}" (malicious ${pct(malicious)}, suspicious ${pct(
+        detail: `${inspectName} returned "${inspectData.verdict}" (malicious ${pct(malicious)}, suspicious ${pct(
           suspicious,
         )})${inspectData.category ? ` with category "${inspectData.category}"` : ''}. Static analysis cannot confirm intent — a human approves or rejects.`,
         severity: 'review',
@@ -338,7 +345,7 @@ export function evaluatePolicy(input: PolicyInput): PolicyOutcome {
       reasons.push({
         code: 'script_benign',
         label: 'No malicious behaviour detected',
-        detail: `Clocked Inspect returned "${inspectData.verdict}" at ${pct(
+        detail: `${inspectName} returned "${inspectData.verdict}" at ${pct(
           malicious,
         )} malicious probability. This is a static assessment, not an execution authorization.`,
         severity: 'info',

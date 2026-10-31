@@ -22,7 +22,7 @@ export function CaseRail({
   return (
     <nav aria-label="Demo cases" data-testid="case-list" className="panel overflow-hidden">
       <header className="flex items-center justify-between border-b border-line px-3 py-2.5">
-        <h2 className="text-[12px] font-semibold tracking-tight text-fg">Demo cases</h2>
+        <h2 className="text-[12.5px] font-semibold tracking-tight text-fg">Demo cases</h2>
         <span className="mono text-[10px] text-fg-3">{cases.length}</span>
       </header>
       <ul className="divide-y divide-line">
@@ -44,21 +44,21 @@ export function CaseRail({
                   >
                     {String(index + 1).padStart(2, '0')}
                   </span>
-                  <span className={`flex-1 truncate text-[12px] font-medium ${active ? 'text-fg' : 'text-fg-2'}`}>
+                  <span className={`flex-1 truncate text-[12.5px] font-medium ${active ? 'text-fg' : 'text-fg-2'}`}>
                     {item.title}
                   </span>
                   <span className="mono shrink-0 rounded border border-line px-1 py-px text-[8.5px] tracking-wide text-fg-3">
                     {TYPE_GLYPH[item.contentType]}
                   </span>
                 </div>
-                <p className="line-clamp-2 pl-[26px] text-[11px] leading-snug text-fg-3">{item.summary}</p>
+                <p className="line-clamp-2 pl-[26px] text-[11.5px] leading-snug text-fg-3">{item.summary}</p>
               </button>
             </li>
           );
         })}
       </ul>
       <footer className="border-t border-line px-3 py-2">
-        <p className="text-[10.5px] leading-relaxed text-fg-3">
+        <p className="text-[11px] leading-relaxed text-fg-3">
           All cases are synthetic. Nothing here came from a real customer, mailbox or endpoint.
         </p>
       </footer>
@@ -134,7 +134,7 @@ export function ContentTypeTabs({
           aria-checked={value === key}
           disabled={disabled}
           onClick={() => onChange(key)}
-          className={`h-7 rounded-md border px-2.5 text-[11.5px] font-medium transition-colors disabled:opacity-50 ${
+          className={`h-7 rounded-md border px-2.5 text-[12px] font-medium transition-colors disabled:opacity-50 ${
             value === key
               ? 'border-[#2a5f54] bg-[#12332e] text-[#8be6d3]'
               : 'border-line bg-panel-2 text-fg-3 hover:text-fg-2'

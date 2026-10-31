@@ -4,8 +4,9 @@ import type { ReactNode } from 'react';
 
 import type { GuardData, InspectData, PolicyThresholds, ProtectData, StageResult } from '@/lib/types';
 import { STAGE_STATUS_LABELS } from '@/lib/types';
-import { ms, pct, truncate, lineNumberAt } from '@/lib/format';
+import { ms, pct } from '@/lib/format';
 import { isHighSensitivity } from '@/lib/redact';
+import { stageBadge, thresholdCaption } from '@/lib/copy';
 import { AlertIcon, CodeIcon, LockIcon, ScanIcon } from '@/components/icons';
 import { EmptyHint, ProbabilityMeter } from '@/components/ui';
 
@@ -26,7 +27,7 @@ function StageShell({
 }) {
   return (
     <article className="panel overflow-hidden">
-      <header className="flex items-center gap-2.5 border-b border-line px-3.5 py-2.5">
+      <header className="flex items-center gap-2.5 px-3.5 py-2.5">
         <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-line bg-panel-2 text-fg-2">
           {icon}
         </span>
@@ -37,7 +38,7 @@ function StageShell({
             <span className="mono hidden text-[10.5px] text-fg-3 sm:inline">{endpoint}</span>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2.5">
+        <div className="flex shrink-0 items-center gap-2">
           {aside}
           <span className="mono text-[10.5px] text-fg-3">{ms(stage.latencyMs)}</span>
           <span
@@ -46,14 +47,15 @@ function StageShell({
                 ? 'border-[#1d5745] bg-[#0d2720] text-pass'
                 : 'border-[#5a4a1c] bg-[#26200f] text-review'
             }`}
+            title={stage.mode === 'live' ? 'Response from the Clocked API' : 'Produced locally — no API request'}
           >
-            {stage.mode}
+            {stageBadge(stage.mode)}
           </span>
         </div>
       </header>
 
       {stage.status !== 'ok' ? (
-        <div className="flex gap-2.5 px-3.5 py-3">
+        <div className="flex gap-2.5 border-t border-line px-3.5 py-3">
           <AlertIcon size={15} className="mt-0.5 shrink-0 text-block" />
           <div className="min-w-0">
             <div className="text-[12.5px] font-medium text-fg">
@@ -67,7 +69,7 @@ function StageShell({
           </div>
         </div>
       ) : (
-        <div className="px-3.5 py-3">{children}</div>
+        <div className="border-t border-line px-3.5 py-3">{children}</div>
       )}
     </article>
   );
@@ -81,9 +83,23 @@ function VerdictChip({ verdict }: { verdict: string }) {
         ? 'border-[#6b5320] bg-[#2a2110] text-review'
         : 'border-[#1d5745] bg-[#0d2720] text-pass';
   return (
-    <span className={`inline-flex items-center rounded border px-2 py-[3px] text-[11.5px] font-medium ${tone}`}>
+    <span className={`inline-flex items-center rounded border px-2 py-[3px] text-[11px] font-medium ${tone}`}>
       {verdict}
     </span>
+  );
+}
+
+/** "3 passages — listed under Evidence" pointer, so the list lives in one place. */
+function EvidencePointer({ count, noun }: { count: number; noun: string }) {
+  return (
+    <p className="flex items-center gap-1.5 text-[11.5px] text-fg-3">
+      <span className="mono text-fg-2">{count}</span>
+      {count === 1 ? noun : `${noun}s`} — every one is listed under{' '}
+      <a href="#evidence" className="text-accent underline decoration-dotted underline-offset-2">
+        Evidence
+      </a>
+      , where a click locates it in the source.
+    </p>
   );
 }
 
@@ -107,21 +123,21 @@ export function GuardCard({
       {!data ? (
         <EmptyHint>No Guard result.</EmptyHint>
       ) : (
-        <div className="space-y-3">
-          <div className="flex items-end justify-between gap-3">
+        <div className="space-y-2.5">
+          <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
             <div>
               <div className="label">Injection probability</div>
               <div className="mt-0.5 flex items-baseline gap-2">
-                <span className="text-[26px] font-semibold leading-none tracking-tight text-fg">
+                <span className="text-[27px] font-semibold leading-none tracking-tight text-fg">
                   {pct(data.injection)}
                 </span>
-                <span className="text-[11.5px] text-fg-3">
+                <span className="text-[12px] text-fg-3">
                   {data.severity ? `severity ${data.severity}` : 'no severity returned'}
                 </span>
               </div>
             </div>
             {data.category ? (
-              <div className="max-w-[45%] text-right">
+              <div className="max-w-[46%] text-right">
                 <div className="label">Top category</div>
                 <div className="mt-0.5 truncate text-[12px] text-fg-2" title={data.category}>
                   {data.category}
@@ -130,34 +146,22 @@ export function GuardCard({
             ) : null}
           </div>
 
-          <div>
-            <ProbabilityMeter
-              value={data.injection}
-              threshold={data.threshold}
-              blockAt={thresholds.blockInjectionProbability}
-              tone={data.injection >= data.threshold ? 'block' : 'review'}
-            />
-            <div className="mt-1 flex justify-between text-[10.5px] text-fg-3">
-              <span>endpoint threshold {pct(data.threshold, 0)}</span>
-              <span>policy block {pct(thresholds.blockInjectionProbability, 0)}</span>
-            </div>
+          <ProbabilityMeter
+            value={data.injection}
+            threshold={data.threshold}
+            blockAt={thresholds.blockInjectionProbability}
+            tone={data.injection >= data.threshold ? 'block' : 'review'}
+            thresholdLabel={thresholdCaption(stage.mode)}
+          />
+          <div className="flex justify-between text-[10.5px] text-fg-3">
+            <span>
+              {thresholdCaption(stage.mode)} {pct(data.threshold, 0)}
+            </span>
+            <span>policy block {pct(thresholds.blockInjectionProbability, 0)}</span>
           </div>
 
           {data.evidence.length > 0 ? (
-            <div className="space-y-1.5">
-              <div className="label">
-                Evidence · {data.evidence.length} {data.evidence.length === 1 ? 'passage' : 'passages'}
-              </div>
-              {data.evidence.slice(0, 4).map((item, index) => (
-                <blockquote
-                  key={`${item.start}-${index}`}
-                  className="mono rounded border border-[#3a1519] bg-[#1b0f11] px-2.5 py-1.5 text-[11.5px] leading-relaxed text-[#ffb3b8]"
-                  title={`offset ${item.start}–${item.end}`}
-                >
-                  “{truncate(item.quote, 160)}”
-                </blockquote>
-              ))}
-            </div>
+            <EvidencePointer count={data.evidence.length} noun="passage" />
           ) : (
             <p className="text-[11.5px] leading-relaxed text-fg-3">
               No evidence passage was returned. That is not proof the content is safe — Guard is a detector, not an
@@ -204,7 +208,7 @@ export function ProtectCard({
           returned, not to every possible sensitive fact.
         </p>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-2.5">
           <div className="flex flex-wrap items-center gap-1.5">
             {counts.map(([kind, count]) => (
               <span
@@ -227,17 +231,17 @@ export function ProtectCard({
             </button>
           </div>
 
-          <div className="overflow-hidden rounded border border-line">
+          <div className="overflow-hidden rounded-lg border border-line">
             <table className="w-full table-fixed border-collapse text-left">
               <thead>
-                <tr className="bg-panel-2 text-[10px] uppercase tracking-[0.08em] text-fg-3">
-                  <th className="w-[26%] px-2 py-1.5 font-semibold">Kind</th>
+                <tr className="bg-panel-2 text-[10px] uppercase tracking-[0.07em] text-fg-3">
+                  <th className="w-[28%] px-2 py-1.5 font-semibold">Kind</th>
                   <th className="px-2 py-1.5 font-semibold">Matched value</th>
-                  <th className="w-[22%] px-2 py-1.5 font-semibold">Offsets</th>
+                  <th className="w-[23%] px-2 py-1.5 font-semibold">Offsets</th>
                 </tr>
               </thead>
               <tbody>
-                {data.entities.slice(0, 12).map((entity, index) => (
+                {data.entities.slice(0, 10).map((entity, index) => (
                   <tr key={`${entity.start}-${index}`} className="border-t border-line align-top">
                     <td className="px-2 py-1.5">
                       <span
@@ -260,9 +264,9 @@ export function ProtectCard({
                 ))}
               </tbody>
             </table>
-            {data.entities.length > 12 ? (
+            {data.entities.length > 10 ? (
               <div className="border-t border-line bg-panel-2 px-2 py-1.5 text-[10.5px] text-fg-3">
-                Showing 12 of {data.entities.length} findings.
+                Showing 10 of {data.entities.length} findings.
               </div>
             ) : null}
           </div>
@@ -275,7 +279,6 @@ export function ProtectCard({
 export function InspectCard({
   stage,
   thresholds,
-  sourceText,
 }: {
   stage: StageResult<InspectData>;
   thresholds: PolicyThresholds;
@@ -296,17 +299,17 @@ export function InspectCard({
           Inspect runs only for the “Script / command” content type. Nothing is executed — this is static analysis.
         </EmptyHint>
       ) : (
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-2.5">
+          <div className="grid grid-cols-2 gap-4">
             <div>
               <div className="label">Malicious</div>
-              <div className="mt-0.5 text-[22px] font-semibold leading-none tracking-tight text-fg">
+              <div className="mt-0.5 text-[23px] font-semibold leading-none tracking-tight text-fg">
                 {pct(data.malicious)}
               </div>
             </div>
             <div>
               <div className="label">Suspicious</div>
-              <div className="mt-0.5 text-[22px] font-semibold leading-none tracking-tight text-fg-2">
+              <div className="mt-0.5 text-[23px] font-semibold leading-none tracking-tight text-fg-2">
                 {pct(data.suspicious)}
               </div>
             </div>
@@ -317,9 +320,12 @@ export function InspectCard({
             threshold={data.threshold}
             blockAt={thresholds.blockScriptMaliciousProbability}
             tone={(data.malicious ?? 0) >= data.threshold ? 'block' : 'review'}
+            thresholdLabel={thresholdCaption(stage.mode)}
           />
           <div className="flex justify-between text-[10.5px] text-fg-3">
-            <span>endpoint threshold {pct(data.threshold, 0)}</span>
+            <span>
+              {thresholdCaption(stage.mode)} {pct(data.threshold, 0)}
+            </span>
             <span>policy block {pct(thresholds.blockScriptMaliciousProbability, 0)}</span>
           </div>
 
@@ -331,22 +337,7 @@ export function InspectCard({
           ) : null}
 
           {data.evidence.length > 0 ? (
-            <div className="space-y-1.5">
-              <div className="label">Flagged lines</div>
-              {data.evidence.slice(0, 5).map((item, index) => (
-                <div
-                  key={`${item.start}-${index}`}
-                  className="flex gap-2 rounded border border-[#3d2f16] bg-[#1d1709] px-2 py-1.5"
-                >
-                  <span className="mono shrink-0 text-[10.5px] text-[#a8905c]">
-                    L{lineNumberAt(sourceText, item.start)}
-                  </span>
-                  <code className="mono min-w-0 break-all text-[11.5px] leading-relaxed text-[#f2cf8a]">
-                    {truncate(item.line, 140)}
-                  </code>
-                </div>
-              ))}
-            </div>
+            <EvidencePointer count={data.evidence.length} noun="flagged line" />
           ) : (
             <p className="text-[11.5px] text-fg-3">No specific lines were flagged.</p>
           )}

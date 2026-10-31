@@ -5,6 +5,7 @@ import { useState } from 'react';
 import type { AnalyzeResponse, PolicyCheckOutcome, ReviewEvent } from '@/lib/types';
 import { MIN_REJECT_NOTE, REVIEW_NOTE_MAX } from '@/lib/review';
 import { clockTime, ms, pct } from '@/lib/format';
+import { creditsValue } from '@/lib/copy';
 import { DECISION_STYLE, DecisionBadge, Divider } from '@/components/ui';
 import { AlertIcon, CheckIcon, ClockIcon, DownloadIcon, InfoIcon, PrintIcon, RefreshIcon, ShieldIcon, XIcon } from '@/components/icons';
 
@@ -39,11 +40,11 @@ const CHECK_DOT: Record<PolicyCheckOutcome, string> = {
 function IdleExplanation() {
   return (
     <div className="panel overflow-hidden">
-      <header className="flex items-center gap-2 border-b border-line px-3.5 py-2.5">
+      <header className="flex items-center gap-2 px-3.5 py-2.5">
         <ShieldIcon size={15} className="text-accent" />
-        <h2 className="text-[13px] font-semibold tracking-tight">How the decision is made</h2>
+        <h2 className="text-[13.5px] font-semibold tracking-tight">How the decision is made</h2>
       </header>
-      <div className="space-y-3.5 px-3.5 py-3.5">
+      <div className="space-y-3 border-t border-line px-3.5 py-3.5">
         <p className="text-[12.5px] leading-relaxed text-fg-2">
           Three detections run in parallel. A deterministic, server-side policy engine then turns their evidence into
           one of three outcomes. The model never decides on its own.
@@ -66,19 +67,17 @@ function IdleExplanation() {
           ].map((item) => (
             <div key={item.decision} className="flex gap-2.5">
               <DecisionBadge decision={item.decision} />
-              <p className="pt-1 text-[11.5px] leading-relaxed text-fg-2">{item.text}</p>
+              <p className="pt-1 text-[12px] leading-relaxed text-fg-2">{item.text}</p>
             </div>
           ))}
         </div>
 
-        <Divider />
-
-        <div className="rounded-lg border border-line bg-panel-2 px-3 py-2.5">
+        <div className="inset px-3 py-2.5">
           <div className="flex items-center gap-1.5">
             <InfoIcon size={12} className="text-fg-3" />
-            <span className="text-[11px] font-medium text-fg-2">Failure is never a pass</span>
+            <span className="text-[11.5px] font-medium text-fg-2">Failure is never a pass</span>
           </div>
-          <p className="mt-1 text-[11px] leading-relaxed text-fg-3">
+          <p className="mt-1 text-[11.5px] leading-relaxed text-fg-3">
             A timeout, an authorization error, an exhausted credit balance or a malformed response degrades the run to
             REVIEW. TrustRoute never treats “we could not check” as “nothing was found”.
           </p>
@@ -117,22 +116,30 @@ export function DecisionPanel({
   const overridden = review !== null && review.decisionAfter !== policy.decision;
   const trimmedNote = note.trim();
   const noteIsEnough = trimmedNote.length >= MIN_REJECT_NOTE;
+  const needsHuman = effectiveDecision === 'REVIEW' && review === null;
+  // The band must not still say "hold" after a reviewer has already decided.
+  const headline = overridden
+    ? review.action === 'approve'
+      ? 'Approved by a reviewer. The masked copy may now be forwarded; nothing was executed.'
+      : 'Rejected by a reviewer. The content stays inside TrustRoute.'
+    : policy.headline;
+  const blockingChecks = policy.checks.filter((item) => item.outcome === 'block' || item.outcome === 'failed').length;
 
   return (
     <div className="panel overflow-hidden">
-      <header className="flex items-center justify-between gap-2 border-b border-line px-3.5 py-2.5">
+      <header className="flex items-center justify-between gap-2 px-3.5 py-2.5">
         <div className="flex items-baseline gap-2">
-          <h2 className="text-[13px] font-semibold tracking-tight">Decision</h2>
+          <h2 className="text-[13.5px] font-semibold tracking-tight">Decision</h2>
           <span className="mono text-[10px] text-fg-3">{result.runId.slice(4, 15)}</span>
         </div>
-        <span className="inline-flex items-center gap-1 text-[10.5px] text-fg-3">
+        <span className="inline-flex items-center gap-1 text-[11px] text-fg-3">
           <ClockIcon size={11} />
           {ms(result.durationMs)}
         </span>
       </header>
 
       <div
-        className={`px-3.5 py-3.5 ${style.bg}`}
+        className={`border-t border-b border-line px-3.5 py-3.5 ${style.bg}`}
         role="status"
         aria-live="polite"
         aria-atomic="true"
@@ -143,14 +150,15 @@ export function DecisionPanel({
             <DecisionBadge decision={effectiveDecision} large />
           </span>
           {overridden ? (
-            <span className="text-[10.5px] font-medium text-fg-2">
-              reviewer override · policy said {policy.decision}
+            <span className="text-right text-[10.5px] font-medium text-fg-2">
+              reviewer override
+              <span className="block text-fg-3">policy said {policy.decision}</span>
             </span>
           ) : (
             <span className="text-[10.5px] text-fg-3">server policy</span>
           )}
         </div>
-        <p className={`mt-2.5 text-[13px] font-medium leading-snug ${style.text}`}>{policy.headline}</p>
+        <p className={`mt-2.5 text-[13.5px] font-medium leading-snug ${style.text}`}>{headline}</p>
       </div>
 
       <div className="space-y-3 px-3.5 py-3">
@@ -165,7 +173,7 @@ export function DecisionPanel({
         ) : null}
 
         <div>
-          <div className="label mb-1.5">Why · {policy.reasons.length} findings</div>
+          <div className="label mb-1.5">All findings · {policy.reasons.length}</div>
           <ul className="space-y-2">
             {policy.reasons.map((reason) => (
               <li key={reason.code} className="flex gap-2">
@@ -184,15 +192,15 @@ export function DecisionPanel({
           </ul>
         </div>
 
-        <Divider />
-
-        <details className="group">
-          <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[11px] font-medium text-fg-2">
+        <details className="group inset px-2.5 py-2">
+          <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[11.5px] font-medium text-fg-2">
             <span className="inline-block text-[9px] text-fg-3 transition-transform group-open:rotate-90" aria-hidden="true">
               ▶
             </span>
             Rule trace
-            <span className="mono ml-auto text-[10px] font-normal text-fg-3">{policy.checks.length} checks</span>
+            <span className="mono ml-auto text-[10px] font-normal text-fg-3">
+              {policy.checks.length} checks{blockingChecks > 0 ? ` · ${blockingChecks} blocking` : ''}
+            </span>
           </summary>
           <ul className="mt-2 space-y-1.5">
             {policy.checks.map((item) => (
@@ -210,13 +218,11 @@ export function DecisionPanel({
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-[10px] leading-relaxed text-fg-3">
+          <p className="mt-2 text-[10.5px] leading-relaxed text-fg-3">
             Every comparison the engine made, in evaluation order. A block anywhere wins; an unmet review line sends the
             content to a human. The same inputs always produce the same trace.
           </p>
         </details>
-
-        <Divider />
 
         <div>
           <div className="label mb-1.5">What to do next</div>
@@ -232,27 +238,25 @@ export function DecisionPanel({
 
         <Divider />
 
-        <dl className="grid grid-cols-2 gap-x-3 gap-y-2">
+        <dl className="grid grid-cols-2 gap-x-3 gap-y-2.5">
           <div>
             <dt className="label">Guard</dt>
-            <dd className="mono text-[11.5px] text-fg">
-              {pct(result.stages.guard.data?.injection ?? null)}
-            </dd>
+            <dd className="mono text-[12px] text-fg">{pct(result.stages.guard.data?.injection ?? null)}</dd>
           </div>
           <div>
             <dt className="label">Inspect</dt>
-            <dd className="mono text-[11.5px] text-fg">
+            <dd className="mono text-[12px] text-fg">
               {result.stages.inspect.status === 'skipped' ? 'n/a' : pct(result.stages.inspect.data?.malicious ?? null)}
             </dd>
           </div>
           <div>
             <dt className="label">Entities masked</dt>
-            <dd className="mono text-[11.5px] text-fg">{result.redaction.applied.length}</dd>
+            <dd className="mono text-[12px] text-fg">{result.redaction.applied.length}</dd>
           </div>
           <div>
             <dt className="label">Credits</dt>
-            <dd className="mono text-[11.5px] text-fg">
-              {result.credits.reported ? result.credits.total : result.mode === 'mock' ? 'n/a · simulated' : 'not reported'}
+            <dd className="mono text-[12px] text-fg">
+              {creditsValue(result.mode, result.credits.total, result.credits.reported)}
             </dd>
           </div>
         </dl>
@@ -260,9 +264,12 @@ export function DecisionPanel({
         <Divider />
 
         <div>
-          <div className="label mb-1.5">Human checkpoint</div>
+          <div className="mb-1.5 flex items-baseline justify-between gap-2">
+            <span className="label">Human checkpoint</span>
+            {needsHuman ? <span className="text-[10.5px] text-review">a person must decide</span> : null}
+          </div>
           {review ? (
-            <div className="rounded-md border border-line bg-panel-2 px-2.5 py-2">
+            <div className="inset px-2.5 py-2">
               <div className="flex items-center gap-1.5 text-[11.5px] font-medium text-fg">
                 {review.action === 'approve' ? (
                   <CheckIcon size={12} className="text-pass" />
@@ -275,7 +282,7 @@ export function DecisionPanel({
                 <span className="text-fg-3">by {review.actor}</span>
                 <span className="mono ml-auto text-[10px] text-fg-3">{clockTime(review.at)}</span>
               </div>
-              {review.note ? <p className="mt-1 text-[11px] leading-relaxed text-fg-2">{review.note}</p> : null}
+              {review.note ? <p className="mt-1 text-[11.5px] leading-relaxed text-fg-2">{review.note}</p> : null}
               <p className="mt-1 text-[10.5px] leading-relaxed text-fg-3">
                 Internal state only. Nothing outside TrustRoute was approved, executed or sent.
               </p>
@@ -293,14 +300,14 @@ export function DecisionPanel({
                   maxLength={REVIEW_NOTE_MAX}
                   aria-label="Reviewer note"
                   placeholder="Why this decision — one sentence is enough."
-                  className="scroll-thin mt-1 block w-full resize-none rounded-md border border-line bg-panel-2 px-2 py-1.5 text-[11.5px] leading-relaxed text-fg outline-none placeholder:text-fg-3 focus:border-accent/60"
+                  className="scroll-thin mt-1 block w-full resize-none rounded-md border border-line bg-panel-2 px-2 py-1.5 text-[12px] leading-relaxed text-fg outline-none placeholder:text-fg-3 focus:border-accent/60"
                 />
               </label>
 
               <div className="flex flex-wrap gap-1.5">
                 <button
                   type="button"
-                  className="btn h-8 flex-1 px-2.5 text-[11.5px]"
+                  className={`btn h-8 flex-1 px-2.5 text-[12px] ${needsHuman ? 'btn-primary' : ''}`}
                   onClick={() => {
                     onApprove(trimmedNote);
                     setNote('');
@@ -308,12 +315,12 @@ export function DecisionPanel({
                   disabled={busy || policy.decision === 'PASS'}
                   title={policy.decision === 'PASS' ? 'Nothing to approve: policy already passed this content.' : undefined}
                 >
-                  <CheckIcon size={13} className="text-pass" />
+                  <CheckIcon size={13} className={needsHuman ? '' : 'text-pass'} />
                   Approve
                 </button>
                 <button
                   type="button"
-                  className="btn h-8 flex-1 px-2.5 text-[11.5px]"
+                  className="btn h-8 flex-1 px-2.5 text-[12px]"
                   onClick={() => {
                     onReject(trimmedNote);
                     setNote('');
@@ -330,15 +337,17 @@ export function DecisionPanel({
                   <XIcon size={13} className="text-block" />
                   Reject
                 </button>
-                <button type="button" className="btn h-8 px-2.5 text-[11.5px]" onClick={onRecheck} disabled={busy}>
+                <button type="button" className="btn h-8 px-2.5 text-[12px]" onClick={onRecheck} disabled={busy}>
                   <RefreshIcon size={13} />
                   Recheck
                 </button>
               </div>
 
-              <div className="flex items-center justify-between text-[10px] text-fg-3">
+              <div className="flex items-center justify-between text-[10.5px] text-fg-3">
                 <span>
-                  {noteIsEnough ? 'Ready to record.' : `${Math.max(0, MIN_REJECT_NOTE - trimmedNote.length)} more characters to reject`}
+                  {noteIsEnough
+                    ? 'Ready to record.'
+                    : `${Math.max(0, MIN_REJECT_NOTE - trimmedNote.length)} more characters to reject`}
                 </span>
                 <span className="mono">
                   {trimmedNote.length}/{REVIEW_NOTE_MAX}
@@ -352,14 +361,12 @@ export function DecisionPanel({
           </p>
         </div>
 
-        <Divider />
-
         <div className="flex gap-1.5">
-          <button type="button" className="btn h-8 flex-1 px-2.5 text-[11.5px]" onClick={onExport}>
+          <button type="button" className="btn h-8 flex-1 px-2.5 text-[12px]" onClick={onExport}>
             <DownloadIcon size={13} />
             JSON report
           </button>
-          <button type="button" className="btn h-8 flex-1 px-2.5 text-[11.5px]" onClick={onPrint}>
+          <button type="button" className="btn h-8 flex-1 px-2.5 text-[12px]" onClick={onPrint}>
             <PrintIcon size={13} />
             Review sheet
           </button>

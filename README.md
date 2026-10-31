@@ -101,7 +101,9 @@ npm run dev
 | `npm test` | vitest: policy, redaction, highlighting, report, validation, rate limit, pipeline |
 | `npm run test:e2e` | Playwright, desktop and mobile |
 | `npm run verify:live` | three real Clocked calls through `clocked-sdk`; prints field structure, never content |
-| `npm run verify:live:browser` | the same three calls through Chromium, for edges that challenge non-browser clients |
+| `npm run verify:live:browser` | the same three calls through Chromium, for edges that challenge non-browser clients; asserts afterwards that the key never reached the page |
+| `node scripts/collect-diagnostics.mjs` | 15 credential-free probes (Node, `curl` direct, `curl` via proxy) for a vendor report |
+| `node scripts/egress-compare.mjs` | five credential-free client configurations compared — Node, `curl`, Chromium with and without a proxy |
 
 Environment (`see .env.example`):
 
@@ -142,6 +144,7 @@ lib/clocked/normalize  defensive parsing: an untrustworthy shape becomes 'invali
 lib/redact           rebuilds the masked copy from spans (bounds, re-anchor, surrogate-safe, overlap-safe)
 lib/policy           pure decision engine, no I/O, unit-tested
 lib/report           pure export builder: no raw text, no entity values, no overlapping evidence
+lib/copy             mode-aware wording: a sentence about Clocked can only exist in live mode
 ```
 
 - Next.js 16.4 App Router (route handlers, Node runtime), React 19.3, TypeScript strict.
@@ -177,14 +180,16 @@ approve → export JSON → print sheet, at 1440×900 and 390×844. Details and 
   2026-10-30 `/injection`, `/pii` and `/script` returned `200` with real detections, real credits and real
   field structures (recorded in `tests/fixtures/`, asserted by `tests/live-contract.test.ts`). That run
   went through a browser, because the service edge challenges non-browser clients with an HTML
-  interstitial (`403`, "Just a moment…") before authentication: `curl` and Node are refused from the same
-  IP and same minute in which Chromium succeeds. The product calls Clocked only from the server, so
+  interstitial (`403`, "Just a moment…") before authentication: `curl` and Node are refused, while
+  Chromium on the same machine reaches the API. *Why* the two differ has not been established — see
+  `docs/API_INTEGRATION.md` §6.1 for the measurements and the three live hypotheses. The product calls
+  Clocked only from the server, so
   `CLOCKED_MODE=live` on this machine reports `edge_interstitial` and falls closed to REVIEW — never PASS.
   Exempting the endpoint from the browser-integrity challenge is a provider-side change. See
   `docs/API_INTEGRATION.md` §6.1.
 - **The simulated mode is labelled as such everywhere**, on purpose and on every surface: a
-  `DEMO · SIMULATED RESULTS` banner with an expandable explanation, a `MOCK` tag per stage card, a
-  `SIMULATED` badge in the header, and `dataSources` / `disclaimers` / the printable sheet in the export.
+  `DEMO · SIMULATED RESULTS` banner with an expandable explanation, a `SIMULATED` tag per stage card
+  (and on the evidence list), a `SIMULATED` badge in the header, and `dataSources` / `disclaimers` / the printable sheet in the export.
   It exists so the review flow can be exercised without a key, and it is never presented as Clocked
   output. There is no code path that falls back to it after a failed live call.
 - The simulated detector is a heuristic simulator, not a detector.

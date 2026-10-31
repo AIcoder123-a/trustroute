@@ -15,7 +15,11 @@
  * key can actually do.
  *
  * It is a verification harness, not a transport: the product always calls Clocked
- * from the server through `clocked-sdk`. Nothing here is imported by the app.
+ * from the server through `clocked-sdk`. Nothing here is imported by the app, and
+ * **a 200 from this script is not acceptance of the server-side integration** —
+ * only `npm run verify:live` (the SDK path) can show that. This script answers a
+ * narrower question: does the key itself work, and do the three bodies produce
+ * the documented shape?
  *
  * ## Where the credential lives
  *
@@ -31,6 +35,12 @@
  *
  * An earlier version passed the key into `page.evaluate`, which put it in the
  * page's JavaScript heap. See docs/SECURITY_NOTES.md §7.
+ *
+ * Residual exposure, stated plainly: the header crosses the CDP WebSocket on
+ * loopback, so anything recording that channel — a Playwright trace, a proxy in
+ * front of CDP, a remote-debugging endpoint bound to a public interface — would
+ * see it. This script enables none of those, and it now verifies after the run
+ * that the value never reached the document.
  *
  * Options
  *   --write-fixtures   rewrite tests/fixtures/clocked-*.json with these responses
@@ -193,7 +203,25 @@ for (const [endpoint, body] of Object.entries(SAMPLES)) {
   }
 }
 
+// The claim in the comment above should be checkable, not just asserted. Read
+// everything the page can reach *from Node* — the key is never passed into the
+// page to perform this check.
+let leaked = null;
+try {
+  const documentText = await page.content();
+  if (documentText.includes(key)) leaked = 'document';
+} catch {
+  leaked = 'unverifiable';
+}
 await browser.close();
+
+if (leaked === 'document') {
+  console.error('The credential appears in the page document. Stop and rotate the key.');
+  process.exit(4);
+}
+if (leaked === 'unverifiable') {
+  console.warn('Could not read the page document to confirm the key stayed out of it.');
+}
 
 for (const row of rows) {
   const facts = [
@@ -216,6 +244,8 @@ const totalCredits = rows.reduce((sum, row) => sum + Number(row.credits ?? 0), 0
 const totalCost = rows.reduce((sum, row) => sum + Number(row.costUsd ?? 0), 0);
 console.log(`\ntotal: ${totalCredits} credits, $${totalCost.toFixed(6)}`);
 console.log(`requests authorized out-of-band: ${authorized} (0 headers set by page JS)`);
+console.log(`credential present in the page document: ${leaked === null ? 'no' : leaked}`);
+console.log('This proves the key works from a browser. It does not verify the server-side path — run `npm run verify:live` for that.');
 
 if (failures > 0) {
   console.error(`\n${failures} of 3 endpoints did not answer.`);

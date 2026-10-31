@@ -29,8 +29,8 @@ vitest 5.0.5, re-verified with the full suite.
 ### 2.1 Unit and integration (vitest)
 
 ```
-Test Files  13 passed (13)
-     Tests  101 passed (101)
+Test Files  14 passed (14)
+     Tests  109 passed (109)
 ```
 
 | File | Assertions | Covers |
@@ -47,6 +47,7 @@ Test Files  13 passed (13)
 | `tests/evidence.test.ts` | 7 | one row per finding in document order, excerpts taken from the text, 1-based line numbers, unplaceable spans kept and flagged instead of dropped |
 | `tests/review-note.test.ts` | 5 | rejection requires a reasoned note, approval does not, notes are trimmed and capped at 280 |
 | `tests/harness-hygiene.test.ts` | 7 | the verification harness attaches the credential out of band and never inside page JavaScript; no `NEXT_PUBLIC_*` anywhere; the key is read in exactly two server-only modules |
+| `tests/copy-consistency.test.ts` | 8 | no mock label claims Clocked as its source; every mock source label reads as simulated; the policy engine attributes a detection to the API only in live mode; a mock report is not "compared with Clocked"; the claim cannot be reintroduced as a literal in `components/` |
 | `tests/live-contract.test.ts` | 11 | recorded **real** 200 responses (`tests/fixtures/clocked-*.json`) normalise into the domain types; every span slices to its value; the rebuilt masked copy equals Clocked's own `anonymized_text`; Inspect offsets are document offsets and produce lines 1–4; the fixtures contain no credential |
 
 The two invariants that matter most, both enforced by tests:
@@ -59,8 +60,11 @@ The two invariants that matter most, both enforced by tests:
 ### 2.2 Browser (Playwright)
 
 ```
-24 passed (34.6s)   # 12 scenarios × desktop 1440×900 and mobile 390×844
+35 passed, 1 skipped (53.0s)   # 18 scenarios × desktop 1440×900 and mobile 390×844
 ```
+
+The one skip is deliberate: the compact decision bar only exists below the `xl` breakpoint, so it is
+asserted on the mobile project and skipped on desktop.
 
 | Scenario | Assertions |
 | --- | --- |
@@ -75,7 +79,12 @@ The two invariants that matter most, both enforced by tests:
 | Evidence | a Guard passage is listed with its line number; clicking it selects it (`aria-pressed`) and switches to the source view, where the corresponding `mark` is rendered |
 | Rule trace | expanding the trace shows the actual comparisons ("Injection probability vs block line", "Guard returned a usable result") |
 | Rejection needs a reason | Reject is disabled on an empty note; after typing one the rejection is recorded and the badge becomes `BLOCK` |
-| Mask map | the forwarded view lists each kind, its replacement token and its count |
+| Mask map | the forwarded view lists each kind, its replacement token and its count; clicking one returns to the source with that span selected |
+| Mock honesty | after a simulated run the page contains no "Matches Clocked anonymized_text", "returned by Clocked", "endpoint threshold" or "Clocked … returned", and does say "nothing compared with Clocked" |
+| One-click start | the landing CTA screens the blocked example and lands on `BLOCK` without a second click |
+| Reasons up front | the blocking reason is readable without expanding the rule trace |
+| Narrow-screen decision bar | below `xl` the decision and its headline sit above the results, and "Why" jumps to the full panel |
+| Failed request | an aborted `/api/analyze` produces an alert and no decision badge — never a pass |
 
 ## 3. Behavioural matrix
 
@@ -124,7 +133,9 @@ Narrowing, one variable at a time, all within the same minute and IP:
 | `/`, `/account`, `/apis`, `GET /clocked/pii` | 403 — whole host |
 | Headless Chromium, same machine | **200**, content renders |
 
-The variable that decides the outcome is the client fingerprint, not the network and not the credential.
+The credential is ruled out (an unauthenticated request is refused identically). Which client property
+decides the outcome — TLS/HTTP profile, egress path or POP-level policy — is **not** established; see
+`docs/API_INTEGRATION.md` §6.1 for the observations and the three live hypotheses.
 The app reacts exactly as designed (measured through `POST /api/analyze`, not inferred):
 
 ```jsonc
@@ -187,12 +198,15 @@ operator which variable is missing. Both paths state that nothing was screened a
 
 ## 6. Manual review pass
 
-- Desktop 1600×1000 and mobile 390×844 screenshotted at every state (idle, block, masked copy, review,
-  report dialog). No horizontal overflow, no clipped controls, no overlapping text.
+- Desktop 1440×900 and mobile 390×844 screenshotted at every state (idle, block, masked copy, report
+  dialog). No horizontal overflow, no clipped controls, no overlapping text. Before/after pairs from the
+  2026-10-31 refinement are in `docs/screenshots/before/` and `docs/screenshots/after/`.
 - Keyboard: `Tab` reaches every control in reading order; `⌘/Ctrl+Enter` screens the current input;
   `Escape` closes the review sheet and returns focus to the sheet's close button.
-- Colour contrast: body text `#eceef1` on `#0a0b0d` and secondary `#a3aab3` on `#101216` both exceed
-  WCAG AA for body text; decision colours are paired with a text label, never colour alone.
+- Colour contrast, measured rather than eyeballed: body text `#f1f3f5` on `#0a0b0d` is 17.7:1, secondary
+  `#b7bec8` on `#101216` is 10.0:1, and the meta text `#8a929d` — previously `#6f7781`, which measured
+  only ~3.6:1 — is now 6.0:1. PASS/REVIEW/BLOCK colours are 8.6/8.9/5.6:1 on the panel, and each is
+  always paired with a text label, never colour alone.
 - Empty, loading, error and success states all render distinct, actionable UI.
 
 ## 7. Credential-handling review of the verification harness
@@ -215,7 +229,7 @@ the browser. It launches a real Chromium, which the provider's own site is meant
 
 | Gap | Why | Consequence |
 | --- | --- | --- |
-| The live path the product uses is still blocked here | the edge challenges non-browser clients; Chromium passes from the same IP | detections are proven (4.2) and the failure path is proven (4.1), but the server-side call cannot complete from this machine until the endpoint is exempted from the browser-integrity challenge |
+| The live path the product uses is still blocked here | the edge challenges non-browser clients; Chromium reaches the API from the same machine | detections are proven (4.2) and the failure path is proven (4.1), but the server-side call cannot complete from this machine until the endpoint is exempted from the browser-integrity challenge |
 | Timeout and 402 not reproduced live | requires a slow or exhausted account | covered at the policy layer, not end to end |
 | No cross-browser run | Chromium only | Firefox/WebKit untested; no browser-specific APIs are used |
 | No accessibility audit tool | not installed | manual checks above only; axe/Lighthouse is a follow-up |
