@@ -15,7 +15,7 @@ steps marked **owner** need the account holder's decision or credentials.
 | 0.1 | Repository name, owner account, public or private | the rules require a **public** repository with setup instructions and development history | a public repo named `trustroute` under the entrant's account |
 | 0.2 | Licence | the rules require **no particular licence** (see `COMPETITION_RULES.md` §5.2); a repo with no licence is "all rights reserved" by default | §0.2.1 analyses both; the default if undecided is to publish **without** a licence, with the copyright line in `README.md` |
 | 0.3 | Which `docs/` files ship publicly | `SUBMISSION_DRAFT.md`, `COMPETITION_RULES.md` and this file are working notes; the rules only ask for README + setup + history | ship them (they are honest and contain no key), or move them out before the first push |
-| 0.4 | Demo host, and whether it runs **live** or **simulated** | a live public demo spends the account's credits; a simulated one cannot be mistaken for a verdict if the banner is up | Render free, one instance, simulated first; switch to live only after `accept:live` succeeds from the host's own egress (`DEPLOYMENT.md` §4.1) |
+| 0.4 | Demo host, and whether it runs **live** or **simulated** | a live public demo spends the account's credits; a simulated one cannot be mistaken for a verdict if the banner is up | Render free, one instance, simulated first; switch to live only after the shared ceiling exists and one screen from the host's own egress works (`RENDER.md` §7.3, §10) |
 | 0.5 | Whether to wire the Wise question to the organiser | prize payment to a mainland-China recipient is unverified (`COMPETITION_RULES.md` §3.1) | ask before the entry is final |
 
 ### 0.2.1 Licence: all rights reserved vs MIT
@@ -127,8 +127,10 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST https://<demo-host>/api/analyze
 - [ ] Oversized body → `413`; empty text → `400`; both say nothing was screened
 - [ ] The failure state is reachable and honest: with the edge refusing, the app says
       *Screening unavailable — manual review required*, never PASS (`docs/SCREENSHOTS.md` §2)
-- [ ] `npm run accept:live` from a machine that is not this one, to learn whether the host's egress is
-      challenged too (`DEPLOYMENT.md` §6)
+- [x] `npm run accept:live` from a machine that is not this one — **done 2026-11-01** via the `live-check`
+      workflow: three `200`s, 12 credits, no challenge (`TEST_REPORT.md` §4.4). Re-run after any rotation
+- [ ] One screen from the **deployed** service, to learn whether Render's own egress behaves the same
+      (`RENDER.md` §7.3) — a runner is not Render
 
 ## 6. The demo link
 
@@ -168,18 +170,19 @@ it proves; a step that is skipped is a claim that has to be softened later.
 | --- | --- | --- | --- |
 | 1 | Freeze the code | `npm run verify && npx playwright test` | the commit being published is the commit that passed |
 | 2 | Check the credential | `npm run accept:check` | the key comes from `.env.local`, is the rotated one, and is not a stale shell export |
-| 3 | Measure the server path | `npm run accept:live` (hotspot or CI, `DEPLOYMENT.md` §3) | whether a non-browser client can reach the API at all |
+| 3 | Measure the server path — **done 2026-11-01** | `live-check` on a GitHub-hosted runner (`DEPLOYMENT.md` §3, `RENDER.md` §7.2) | three `200`s, 12 credits, no challenge — `TEST_REPORT.md` §4.4. Re-run it after any key rotation |
 | 4 | Decide the tier | `DEPLOYMENT.md` §7 A/B/C | what the entry is allowed to claim |
 | 5 | Secret scan and deployment audit | §2 of this file, plus `npm run deploy:preflight` | the repo can be made public, and the host's environment cannot overspend or leak |
 | 6 | Create the public repository | owner | the rules' repository requirement |
-| 7 | Deploy with `CLOCKED_MODE=mock` | Render: build `npm ci && npm run build`, start `npx next start -p $PORT` | the build runs on the host, and a wrong turn costs nothing |
+| 7 | Deploy with `CLOCKED_MODE=mock`, **no secret on the host** | Render Blueprint from `render.yaml`; build `npm ci && npm run build`, start `npx next start -H 0.0.0.0 -p $PORT` | the build runs on the host, and a wrong turn costs nothing — and there is no key present to leak (`RENDER.md` §8 phase 1) |
 | 8 | Verify from outside | §5 of this file (`/api/status`, headers, cross-origin 403) | the deployed instance behaves like the local one |
-| 9 | Switch to live, if step 3 passed | set `CLOCKED_MODE=live`, `DAILY_SCREENS=40`, `RATE_LIMIT_REQUESTS=10`, redeploy | the demo screens for real, within a bounded budget |
-| 10 | Screen once in a private window | one-click example | the host's egress reaches Clocked — the only honest proof |
-| 11 | Record the demo | `docs/DEMO_RECORDING.md` | the video, in a mode the demo can actually produce |
-| 12 | Check the link as a stranger | private window, phone, no session | a judge can open it |
-| 13 | Fill the entry form | §7 of this file | the entry |
-| 14 | Watch the balance for 24 h | `X-Daily-Remaining`, provider dashboard | the spend is what was planned |
+| 9 | Move the ceiling off the process **before** live | add `UPSTASH_REDIS_REST_URL`/`_TOKEN`; `/api/status` must report `admission.store: "redis"` and the counter must survive a restart | `RENDER.md` §10 — on a free instance an in-memory ceiling resets on every 15-minute sleep |
+| 10 | Switch to live | `CLOCKED_MODE=live`, `DAILY_SCREENS=20`, `RATE_LIMIT_REQUESTS=10`, redeploy | the demo screens for real, within a bounded budget |
+| 11 | Screen once in a private window | one-click example | the host's egress reaches Clocked — the only honest proof |
+| 12 | Record the demo | `docs/DEMO_RECORDING.md` | the video, in a mode the demo can actually produce |
+| 13 | Check the link as a stranger | private window, phone, no session | a judge can open it |
+| 14 | Fill the entry form | §7 of this file | the entry |
+| 15 | Watch the balance for 24 h | `X-Daily-Remaining`, provider dashboard | the spend is what was planned |
 
 Two rules that outrank the order: never publish with the key in a variable the browser can read, and never
 leave the demo live with an unbounded budget on a host that can start more than one instance.

@@ -88,9 +88,9 @@ Protect run for every content type; Inspect runs only when the content is a scri
 | Unit / integration tests | 167 passing in 22 files |
 | Browser tests | 46 runs (23 scenarios × desktop + mobile), 44 passing, 2 deliberate skips |
 | Live Clocked detections | **verified with a real key** — `/injection` 0.9957 critical, `/pii` 6 entities including two custom kinds, `/script` 0.9948 malicious; 12–19 credits per screen; responses recorded under `tests/fixtures/` and asserted by contract tests |
-| Server-side live path | **re-measured 2026-10-31** with the product's own SDK path: all three endpoints `403 cf-mitigated: challenge` from `-SJC`, 0 credits. The app reports `Screening unavailable — manual review required`; it does not fall back to the simulator |
+| Server-side live path | **verified 2026-11-01 from a GitHub-hosted runner** with the product's own SDK path: three calls, three `200`s, no challenge, 12 credits, no retry (`TEST_REPORT.md` §4.4). From the build machine the same client is still challenged or dropped, and the app reports `Screening unavailable — manual review required`; it never falls back to the simulator |
 | Deployment | `<demo-url>` — not deployed yet |
-| Repository | `<github-url>` — local only until the owner publishes it |
+| Repository | `<github-url>` — private until the owner publishes it |
 
 The mock mode is clearly labelled in the UI and in every export. It exists so the product can be reviewed
 without a key; it is never presented as Clocked output.

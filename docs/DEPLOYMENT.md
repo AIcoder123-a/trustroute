@@ -1,5 +1,10 @@
 # Deployment: what it takes, what is blocked, and how to find out cheaply
 
+**Status 2026-11-01: the blocker below was measured and it is not a blocker for a hosted deployment.**
+Three real calls from a GitHub-hosted runner returned `200` on all three endpoints through `clocked-sdk`
+with no challenge (`TEST_REPORT.md` §4.4). §2 and §3 are kept as the record of how that was reasoned and
+settled; the live plan that follows from it is `docs/RENDER.md` §7.3 and §8.
+
 Nothing here has been deployed. No account was created, no service was purchased, and no remote was
 configured. This document is the analysis that has to exist **before** the owner authorises a deploy.
 
@@ -35,8 +40,11 @@ The consequence, stated plainly:
 > laptop. If the rule is fingerprint-based, every one of them is refused. If the rule is IP-reputation
 > based, a datacenter IP is more likely to look worse, not better.
 
-So the honest statement is: **the server-side path is unverified from any host other than this machine**,
-and no amount of reading documentation resolves that. It needs one measurement from a different egress.
+At the time this was written the honest statement was: *the server-side path is unverified from any host
+other than this machine*, and no amount of reading documentation resolves that — it needed one measurement
+from a different egress. **That measurement was made on 2026-11-01 (§3) and the paragraph above was wrong
+about the client hypothesis.** The record is kept because how the wrong guess was excluded is the useful
+part.
 
 ## 3. The cheap experiment, before any deployment
 
@@ -54,8 +62,14 @@ artifact: `docs/RENDER.md` §7.2.
 **Option B — deploy, then screen once.** More effort, and it needs the key in a dashboard, but it tests the
 host that will actually serve judges. Sequence and outcomes: `docs/RENDER.md` §7.3.
 
-Both need the owner, because both require an account and a credential. **Neither has been run by the
-assistant.** Nothing in this repository can substitute for either.
+**Option A was run on 2026-11-01 and it answered the question.** Run 1 of `live-check` (`f03b6a1`, started
+by the owner, 43 s): three `answered` rows, all `200`, 12 credits, `cf-mitigated` absent on every response
+(`TEST_REPORT.md` §4.4). Option B — one screen from the deployed service — is still unwritten, because
+nothing is deployed; it is the remaining step in `docs/RENDER.md` §7.3, and it is the only one that speaks
+for Render's own egress rather than a runner's.
+
+Both required the owner, because both need an account and a credential. Nothing in this repository can
+substitute for either.
 
 Reading the result — the script labels each call, so the four outcomes are not confused with each other:
 

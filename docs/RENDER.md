@@ -103,14 +103,27 @@ Until step 1 exists, leaving `TURNSTILE_ENABLED=false` is the only correct setti
 - **Do not keep it awake with a pinger.** A cron ping consumes instance hours (750 is exactly one month of
   24/7) and defeats the tier's purpose.
 
-## 7. The claim this deployment does *not* make
+## 7. What is now measured, and the one thing still unknown
 
-> Render can host this app ≠ Render can reach the Clocked API.
+Until 2026-11-01 the honest claim was: *Render can host this app ≠ Render can reach the Clocked API.*
 
-Measured on 2026-11-01 from two different networks: `curl` and Node are answered with
-`403 cf-mitigated: challenge` while Chromium from the same IP gets `200`. The refusal follows the **client**,
-not the address, so a datacenter egress is unlikely to change it. Nothing in this repository can settle that
-question — only a call from a cloud egress can — so the demo starts simulated and the deployment says so.
+That gap is half closed. From this machine, `curl` and Node were answered with `403 cf-mitigated: challenge`
+while Chromium from the same address got `200`, and the conclusion drawn at the time — "the refusal follows
+the client, so a datacenter egress is unlikely to change it" — **was wrong**. A GitHub-hosted runner is a
+non-browser client on someone else's network, and it was answered normally.
+
+| | Local machine (2026-11-01) | GitHub-hosted runner (2026-11-01) |
+| --- | --- | --- |
+| Client | Node `clocked-sdk` | Node `clocked-sdk` — the same shape |
+| Egress | home / mobile carrier | datacenter (`cf-ray …-MSP`) |
+| Result | `403 cf-mitigated: challenge` | **`200`, real verdicts, 12 credits for three calls** |
+
+So the refusal is about *this machine's path to the host*, not about server-side clients. Full record:
+`TEST_REPORT.md` §4.4.
+
+**Still unknown:** Render's own egress. A runner is not a Render instance — different network, different
+address, and three detections run in parallel on a 0.1-CPU dyno. That is one real screen away from being
+known (§7.3), and it costs 12–19 credits to find out.
 
 ### 7.1 What cannot be used for the test
 
@@ -121,75 +134,169 @@ question — only a call from a cloud egress can — so the demo starts simulate
 | A **probe route** in this app (`/api/probe`) | A public endpoint that spends credits on demand is the exact thing §4–5 exist to prevent. Not added, and it should not be. |
 | A **public** repo or a public demo just to test | Publishes the project before the owner has decided to, and answers nothing that a private runner does not. |
 
-### 7.2 The cheapest real answer: a private repository and the committed workflow
+### 7.2 How the question was answered (done, and repeatable)
 
-`.github/workflows/live-check.yml` already exists and does exactly one thing: three real calls through
-`clocked-sdk` from a stock `ubuntu-latest` runner, no deployment, no browser, no public URL. A **private**
-GitHub repository is enough — private repositories get 2,000 Actions minutes a month on the free plan, and
-this job takes about two. Nothing about the project becomes public, and no service is purchased.
+`.github/workflows/live-check.yml` does one thing: three real calls through `clocked-sdk` from a stock
+`ubuntu-latest` runner — no deployment, no browser, no public URL. A **private** repository is enough;
+private repositories get 2,000 Actions minutes a month on the free plan and this job uses under one. What
+was actually done, in order, entirely inside GitHub:
 
-Owner steps (about five minutes, all inside GitHub):
-
-1. **Create the repository as private.** `github.com/new` → name `trustroute` → **Private** → do not add a
-   README. Copy the URL.
-2. **Push this local repository to it** (the only outward-facing command in the whole plan):
-   `git remote add origin https://github.com/<account>/trustroute.git` then `git push -u origin main`
+1. **Create the repository as private.** `github.com/new` → name `trustroute` → **Private** → no README.
+2. **Push this local repository to it**: `git remote add origin https://github.com/<account>/trustroute.git`
+   then `git push -u origin master` — this repository's branch is `master`, not `main`.
 3. **Add the key as a repository secret**: Settings → Secrets and variables → Actions → *New repository
-   secret* → name `CLOCKED_API_KEY`, value = the rotated key. The workflow passes it as an environment
-   variable to a script that never prints it.
-4. **Run it**: Actions → *live-check* → *Run workflow*. Two minutes.
+   secret* → name `CLOCKED_API_KEY`. The workflow passes it as an environment variable to a script that
+   never prints it.
+4. **Run it**: Actions → *live-check* → *Run workflow*.
 5. **Read the artifact**: `live-acceptance.json` (retained 7 days) has, per endpoint, the HTTP status,
    latency, response type, classification, credits, `cf-ray`/`cf-mitigated` and the verdict.
+
+Two things learned the hard way, worth keeping:
+
+- The workflow did **not** appear in the Actions tab until a second push touched the file, even though it was
+  present on the default branch from the first push. A brand-new repository does not always index
+  `.github/workflows` on its first push. Check `GET /repos/{owner}/{repo}/actions/workflows` — `total_count:
+  0` means "not indexed", not "misconfigured".
+- `concurrency: live-check` is in the file so a double click on *Run workflow* queues rather than spending
+  the credits twice.
 
 Reading the result — the same table as `DEPLOYMENT.md` §3:
 
 | Artifact says | Meaning | Next |
 | --- | --- | --- |
-| three `answered` rows, `200` | a datacenter egress reaches the API | Render can run `CLOCKED_MODE=live`; deploy, then confirm with one real screen (§7.3 step 3) |
+| three `answered` rows, `200` — **this is what happened** | a datacenter egress reaches the API | the question moves to Render itself: §7.3, then §10 |
 | `edge_challenge` again | the rule is not about a particular network — it applies to non-browser clients generally | keep the public demo simulated; the provider escalation (`API_INTEGRATION.md` §6.4) is the only path |
 | `timeout` / `connection_error` | that runner could not open a connection | re-run once; if it repeats, the runner's egress is filtered and the result says nothing about Render |
 | `auth_failed` / `forbidden` | the key, not the edge | fix the secret, do not touch the network |
 
-Two things this test is good for beyond its verdict: it proves the **key works from a machine that is not
-this one** (a rotation that broke something shows up here), and it produces a dated artifact that can be
-attached to the escalation email.
+Beyond its verdict, the run proved that the **key works from a machine that is not this one** (a rotation
+that broke something shows up here), and it produced a dated artifact that can be attached to the provider
+escalation if one is ever needed.
 
-### 7.3 If it passes: the in-service proof
+### 7.3 The in-service proof: one screen, after the ceiling is real
 
-A workflow passing does not prove *this service* passes — different host, different egress. The only
-in-service proof is a real screen, and it needs the live mode:
+A passing workflow does not prove *this service* passes — different host, different egress, and a free
+instance has a fraction of a core. The only in-service proof is a real screen — but it must not be the first
+thing a live deployment does. Two preconditions, both cheap, both reversible:
 
-1. Deploy with `CLOCKED_MODE=mock` and confirm §8 step 5.
-2. Run `node scripts/deploy-preflight.mjs` with the **deployment's** values (locally, in a shell): it must
-   print `READY`, or `READY WITH CAVEATS` with the caveats accepted on purpose.
-3. Switch `CLOCKED_MODE=live` (and `DAILY_SCREENS=40`), redeploy, open the site in a private window and
-   screen one one-click example. Three outcomes, all informative:
-   - **PASS/REVIEW/BLOCK with real numbers** → the deployment works; keep it.
+1. **The mock deploy works** (§8 phase 1): the site loads, a one-click case runs, `/api/status` says
+   `mode: "mock"` and `configuredKey: false`.
+2. **The day ceiling is shared and holds** (§10): `/api/status` reports `admission.store: "redis"`, and the
+   counter survives a restart. Without this, "live" means the ceiling resets every time the service sleeps.
+
+Then, and only then:
+
+3. In the dashboard add `CLOCKED_API_KEY`, set `CLOCKED_MODE=live` and `DAILY_SCREENS=20`, and deploy.
+4. `curl -s https://<name>.onrender.com/api/status` → `mode: "live"`, `admission.store: "redis"`.
+5. Open the site in a private window and screen **one** one-click example. Three outcomes, all informative:
+   - **PASS/REVIEW/BLOCK with real numbers** → the deployment works; keep it, and raise `DAILY_SCREENS` to
+     the number §10 justifies.
    - **`Screening unavailable — manual review required`** → the service was challenged too. Switch back to
      `mock` immediately; the product already refuses to fake a verdict.
    - **`503 not_configured`** → the key is missing or malformed on the host; `deploy-preflight` names which.
-4. Spend at most one screen on this. It is 12–19 credits; the point is the `mode` and the stage statuses, not
-   a verdict.
+6. Spend at most one screen on this. 12–19 credits; the point is the `mode` and the stage statuses, not a
+   verdict.
 
 ## 8. Deploy steps (owner, not the assistant)
 
-Render deploys from a **private** repository as well as a public one, so the repository from §7.2 can serve
-both the connectivity test and the deployment. Nothing has to be published to get either.
+Render deploys from a **private** repository too, so the repository from §7.2 serves both the connectivity
+test and the deployment. **None of this has been done** — it is the sequence to follow, written so that the
+first deployment cannot expose the key.
 
-1. Create the repository from this one and confirm the secret scan (`RELEASE_CHECKLIST.md` §2).
-2. Run `npm run deploy:preflight` with the values the service will have. It refuses a live deployment whose
-   daily counter lives in process memory, a `NEXT_PUBLIC_*` variable, a key that kept its quotes, and a
-   human check that is on without a secret.
-3. Render → **New → Blueprint**, select the repo; `render.yaml` fills the form.
-4. Paste the secrets when prompted (`CLOCKED_API_KEY` at minimum; Redis and Turnstile later).
-5. Wait for the build; read the log for the "no open ports" and OOM failure modes in §1–2.
-6. `curl -s https://<name>.onrender.com/api/status` — expect `mode: "mock"`, `store`, `turnstile: "off"`,
-   `trustProxy: true`.
-7. Open the site in a private window: the idle screen, a one-click example, the evidence panel, the export.
-8. Re-run step 6 after the service has slept for 15 minutes — this is the cold-start path a judge will hit.
-9. Only then decide §7.3.
+### Phase 1 — simulated, with no secret on the host
+
+`render.yaml` deliberately declares **no secret** in this phase. The mock needs no key, and a deployment that
+was never given one cannot leak one.
+
+1. Render dashboard → **New +** → **Blueprint** → connect GitHub → choose `AIcoder123-a/trustroute` →
+   **Connect**. (A first-time Render account may ask to install the GitHub App on that one repository only.)
+2. The next screen is filled from `render.yaml` and asks for **nothing**: name `trustroute`, plan **Free**,
+   branch `master`, build `npm ci && npm run build`, start `npx next start -H 0.0.0.0 -p $PORT`, health
+   check `/api/status`.
+3. **Apply** / **Create Web Service**. First build is 2–4 minutes on a free instance.
+4. If the build dies with `Killed` or a heap error, add `NODE_OPTIONS=--max-old-space-size=460` (§1).
+5. `curl -s https://<name>.onrender.com/api/status` → expect `mode: "mock"`, `configuredKey: false`,
+   `admission.store: "memory"`, `turnstile: "off"`, `trustProxy: true`.
+6. Open the site in a private window: idle screen, one-click case, evidence panel, export.
+7. Re-run step 5 after 15 minutes idle — that is the cold-start path a judge will hit.
+
+### Phase 2 — live, and only after §10
+
+8. Add the Redis pair in the dashboard (**Environment** → *Add Environment Variable*), confirm
+   `admission.store: "redis"`, then restart and confirm the counter survived (§10).
+9. Add `CLOCKED_API_KEY`, set `CLOCKED_MODE=live` and `DAILY_SCREENS=20`, and deploy.
+10. Run the one-screen proof in §7.3.
+
+### Things that will otherwise waste an afternoon
+
+- `autoDeploy: false` is set in `render.yaml`, so **a push does not redeploy**. After pushing, use
+  **Manual Deploy → Deploy latest commit**. This is deliberate: a doc commit should not rebuild a service
+  that is mid-judging.
+- Free services sleep after 15 minutes idle and take about a minute to wake. Render shows its own loading
+  page, so a judge sees "starting", not a dead link — but open the link yourself a minute before a judging
+  window.
+- Environment variable changes restart the service; a restart wipes the in-memory counters (§4). That is the
+  reason §10 exists.
+- Render keeps the two most recent deploys, so any bad phase-2 change is one click back (§9).
 
 ## 9. Rollback
 
 Render keeps the two most recent deploys, so a bad build is one click back. Nothing in this app migrates
 state, so a rollback is safe by construction.
+
+## 10. Before opening live to judges: make the ceiling real
+
+A live public demo is a URL that spends the account's credits. Four controls stand in front of it. Three of
+them live in process memory, and a free instance's process is **not durable** — it is destroyed on redeploy,
+on restart, and on every 15-minute sleep. So the question is not "are the controls configured" but "which of
+them still mean something after the process is gone".
+
+| Control | Where | On a free Render instance |
+| --- | --- | --- |
+| Request body cap, 512 KB | `lib/body.ts` | stateless — always holds |
+| Per-caller window, 10 per 5 min | `lib/ratelimit.ts` | in memory: resets on restart; and only meaningful with `TRUST_PROXY=1` |
+| Concurrency, 2 per caller | `lib/admission.ts` | in memory: same caveat |
+| **Day ceiling** (`DAILY_SCREENS`) | `lib/quota.ts` | **in memory it resets on every wake — this is the one that spends money** |
+
+Reading that honestly: with no Redis, "40 screens a day" is really "40 screens per process lifetime", and a
+service that sleeps every 15 minutes can hand out 40 again on every wake. The per-caller limits do not save
+you, because they are per caller, and the ceiling is the only control that bounds a crowd.
+
+### The one prerequisite: a shared counter
+
+1. Create an Upstash Redis database — free tier, **no card**. Copy the REST URL and REST token.
+2. Render → **Environment** → add `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`. Save; the service
+   restarts.
+3. `curl -s https://<name>.onrender.com/api/status` → `admission.store: "redis"`,
+   `admission.sharedAcrossInstances: true`.
+
+The code **fails closed** here on purpose: if Redis cannot answer, screening is refused with `503
+quota_unavailable` and `Retry-After: 30` rather than allowed. A demo that is briefly down is a nuisance; a
+demo that silently loses its ceiling is the failure this section exists to prevent.
+
+### Three checks that prove it, not three that merely show it
+
+1. **Store.** `/api/status` says `store: "redis"`.
+2. **It moves.** Screen once; the `X-Daily-Remaining` response header is one lower than before.
+3. **It survives.** Restart the service (or let it sleep 15 minutes, then wake it), and screen again. The
+   header must continue from where it was — **not** jump back to the configured ceiling. This is the only
+   check that distinguishes a real shared ceiling from an in-memory one.
+
+### Sizing the number
+
+A screen costs 12–19 credits (`TEST_REPORT.md` §4.4 measured 12 for a three-endpoint screen). If the judging
+window is seven days:
+
+| `DAILY_SCREENS` | Worst case over 7 days | Comment |
+| --- | --- | --- |
+| 40 | ≈ 3,400 credits | comfortable against a 20,000 balance, and leaves room for re-tests |
+| 20 | ≈ 1,700 credits | the value §7.3 starts with; raise it once the deployment is proven |
+| 60 (default in live) | ≈ 5,000 credits | only if the balance can absorb it |
+
+### What is still missing, and why it is acceptable for now
+
+There is **no human-check widget**. `lib/turnstile.ts` verifies tokens server-side, but the browser half is
+not written (§5), so `TURNSTILE_ENABLED=false` and `/api/status` says `turnstile: "off"`. Without it, a bot
+can spend the day's ceiling instead of a person spending a fraction of it. The ceiling bounds the damage;
+Turnstile would make the damage smaller. That is the honest trade, and it is why `DAILY_SCREENS` stays low
+rather than "as high as the balance allows".

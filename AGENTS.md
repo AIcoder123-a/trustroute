@@ -116,18 +116,20 @@ Playwright downloads browsers once: `npx playwright install chromium`.
 | Build, typecheck, lint | clean, 0 warnings |
 | Unit/integration tests | 167 passing (22 files, incl. contract tests against recorded real responses, a policy-trace suite, a credential-hygiene suite, guards for origin/admission/HTTP limits/body bounds, and the quota, Turnstile, caller-identity and deployment-audit suites) |
 | Browser tests | 44 passing, 2 deliberate skips (23 scenarios × desktop + mobile) |
-| Live Clocked detections | **verified 2026-10-30 through a browser**: `/injection` 0.9957 critical, `/pii` 6 entities incl. both custom kinds, `/script` 0.9948 malicious. 12 credits / $0.0024 per full screen |
-| Live path from the server | **refused on two networks, and the refusal follows the client**: `403 cf-mitigated: challenge` before authentication on the calls that connect, `UND_ERR_CONNECT_TIMEOUT` on the calls that do not; from one public IP, Node and `curl` are challenged while Chromium gets `200` (`docs/API_INTEGRATION.md` §6.3, §6.3.2). All end in `Screening unavailable` |
-| Rate limiting | window + concurrency in-process (exact: Render free is one instance); daily ceiling in-process by default, **Redis when `UPSTASH_REDIS_REST_*` is set** (one atomic `EVAL`, fail-closed); Turnstile verification implemented but **off**, because the browser widget is not shipped (`docs/RENDER.md` §5) |
-| Deployment | not deployed. Render Free chosen; `render.yaml` + `docs/RENDER.md` are the blueprint and the manual |
-| Git remote | none; local commits only |
+| Live Clocked detections | **verified through a browser 2026-10-30**: `/injection` 0.9957 critical, `/pii` 6 entities incl. both custom kinds, `/script` 0.9948 malicious |
+| Live path from the server | **verified 2026-11-01 from a GitHub-hosted runner**: three calls through `clocked-sdk`, all `200`, no challenge, 12 credits / $0.0024 (`docs/TEST_REPORT.md` §4.4). From this machine the same client is still challenged or times out (`docs/API_INTEGRATION.md` §6.3) — the refusal is about *this path*, not about non-browser clients |
+| Rate limiting | window + concurrency in-process (exact: Render free is one instance); daily ceiling in-process by default, **Redis when `UPSTASH_REDIS_REST_*` is set** (one atomic `EVAL`, fail-closed); Turnstile verification implemented but **off**, because the browser widget is not shipped (`docs/RENDER.md` §5). On Render free the in-process ceiling resets on every sleep — `docs/RENDER.md` §10 is the precondition for going live |
+| Deployment | not deployed. Render Free chosen; `render.yaml` declares **no secret** so the simulated deploy cannot leak one; `docs/RENDER.md` §8 is the two-phase plan |
+| Git remote | **private GitHub** `AIcoder123-a/trustroute`, branch `master`. Actions workflow `live-check` is manual-only (`workflow_dispatch`) and has run once |
 
 Open items and blockers are tracked in `docs/IMPLEMENTATION_PLAN.md` §6–7.
 
 ## 7. If you pick this up next
 
-1. The field structure is recorded (`docs/API_INTEGRATION.md` §6.2, `tests/fixtures/`). What remains is
-   the server-side path: ask the provider to exempt `/clocked/*` from the browser-integrity challenge,
-   then re-run `npm run verify:live`. Replace nothing else — the mock stays a mock.
+1. The field structure is recorded (`docs/API_INTEGRATION.md` §6.2, `tests/fixtures/`) and the server-side
+   path is proven from a cloud egress (`docs/TEST_REPORT.md` §4.4). What remains is the deployment, and it
+   is two phases, not one: deploy simulated with **no key on the host** (`docs/RENDER.md` §8 phase 1), make
+   the day ceiling shared before going live (§10), then spend exactly one screen proving Render's own
+   egress (§7.3). Replace nothing else — the mock stays a mock.
 2. Re-run `npm run verify` and `npm run test:e2e`.
 3. Only then touch `docs/SUBMISSION_DRAFT.md` with real URLs.

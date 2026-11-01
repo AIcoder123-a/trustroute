@@ -99,7 +99,7 @@ There is no code path that substitutes a simulated result for a failed live call
 | Claim | Status |
 | --- | --- |
 | The three endpoints return the documented fields, with real verdicts | **Verified** 2026-10-30 through the API; responses committed as fixtures and asserted by contract tests |
-| The product calls them from the server with the official SDK | **Built and exercised**; on 2026-10-31 the call reached the service edge and was challenged (`403`, `cf-mitigated: challenge`), so the acceptance run records a refusal rather than a detection |
+| The product calls them from the server with the official SDK | **Verified** 2026-11-01 from a GitHub-hosted runner: three calls through `clocked-sdk`, three `200`s, no challenge, 12 credits (`TEST_REPORT.md` §4.4). From the build machine the same client is challenged or dropped, which is a property of that path |
 | A browser from the same machine reaches the API | **Verified**; the same bodies return `200`, which is why the harness exists but is explicitly *not* the acceptance |
 | The demo runs without a key | **Verified**; the simulator is labelled on every surface and is never described as Clocked output |
 | A cloud host would pass the edge | **Not verified.** No deployment has been made and no host is claimed to fix this |

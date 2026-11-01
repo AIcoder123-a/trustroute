@@ -213,22 +213,20 @@ approve → export JSON → print sheet, at 1440×900 and 390×844. Details and 
 
 ## Known limitations
 
-- **All three endpoints are verified with a real key; the server-side path is still refused by the edge.**
-  On 2026-10-30 `/injection`, `/pii` and `/script` returned `200` with real detections, real credits and
-  real field structures (recorded in `tests/fixtures/`, asserted by `tests/live-contract.test.ts`). That
-  run went through a browser, because the edge answers non-browser clients with an HTML challenge
-  (`403`, `cf-mitigated: challenge`) before authentication.
-  Re-measured on 2026-11-01 with `npm run accept:live` — the product's own path, Node + `clocked-sdk`, no
-  browser, a rotated key: of three calls, one reached the edge and was challenged (`403`, `text/html`,
-  `-SEA`, 0 credits, 0.7 s), and two never connected at all (`UND_ERR_CONNECT_TIMEOUT` after 10.7 s, both
-  Cloudflare anycast addresses). The script reports those as different categories, because they are
-  different problems. Repeated on a phone hotspot: the same two shapes, in the same order.
-  **The discriminator is the client, not the address.** In one sitting, from one public IP with no
-  credential: Node `403 challenge` ×4, `curl` `403 challenge` ×2, Chromium **`200`** with the real page.
-  So a different host will not fix it — only a provider-side exemption for `/clocked/*` will
-  (`docs/API_INTEGRATION.md` §6.3.2). On this machine `CLOCKED_MODE=live` therefore reports
-  `edge_interstitial` and holds the content with `Screening unavailable — manual review required` — never
-  PASS, and never a simulated number dressed as a live one.
+- **All three endpoints are verified with a real key — through a browser, and from a cloud egress on the
+  product's own path.** On 2026-10-30 `/injection`, `/pii` and `/script` returned `200` with real
+  detections, real credits and real field structures (recorded in `tests/fixtures/`, asserted by
+  `tests/live-contract.test.ts`); that run went through a browser. On 2026-11-01 the product's own path —
+  Node + `clocked-sdk`, no browser — ran on a GitHub-hosted runner: three `200`s, no challenge, 12 credits
+  (`docs/TEST_REPORT.md` §4.4).
+  - **From this machine that same client is still refused**, and the refusal is not about the client's
+    shape. Node and `curl` get an HTML challenge (`403`, `cf-mitigated: challenge`) while Chromium from the
+    same public address gets `200`; on other calls nothing connects at all (`UND_ERR_CONNECT_TIMEOUT`, both
+    Cloudflare anycast addresses). Two networks produced the same two shapes in the same order, and the
+    runner produced neither. The script reports those as different categories, because they are different
+    problems. Locally, `CLOCKED_MODE=live` therefore reports `edge_interstitial` and holds the content with
+    `Screening unavailable — manual review required` — never PASS, and never a simulated number dressed as
+    a live one.
 - **The simulated mode is labelled as such everywhere**, on purpose and on every surface: a
   `DEMO · SIMULATED RESULTS` banner with an expandable explanation, a `SIMULATED` tag per stage card
   (and on the evidence list), a `SIMULATED` badge in the header, and `dataSources` / `disclaimers` / the printable sheet in the export.

@@ -404,19 +404,41 @@ alike. On the hotspot, in one sitting, with **no credential in any of these requ
 Same public address, same minute, no cookie or session carried over, and the browser
 was not given a credential — it was only asked whether the page loads.
 
-**Interpretation.** The rule discriminates on *what the client looks like*, not on where it connects from.
-That is consistent with everything else observed: two different networks refused Node identically, while a
-browser from one of those networks passed. A datacenter egress does not change what the client looks like.
+**Interpretation (later shown to be wrong — see §6.3.3).** At the time this read as: the rule discriminates on
+*what the client looks like*, not on where it connects from. That was consistent with everything observed
+here — two different networks refused Node identically, while a browser from one of those networks passed —
+but the comparison varied the client while holding the *path to the host* roughly constant, so it could not
+separate the two. A cloud runner, which varies both at once, did: same Node client, `200` (§6.3.3). The
+paragraph is kept as written because the mistake is instructive.
 
-**What this changes for the deployment.** Nothing about the product, and something important about the
-claim. A Render instance is a Node client on a different address, and the evidence says the address is not
-the variable — so "Render can host this app" must not be written as "Render can reach this API". The order
-stays: deploy simulated, measure from the host's own egress, switch to live only if a real verdict comes
-back. See `docs/RENDER.md` §7.
+**What this changes for the deployment.** The claim still has to be earned, but not for the reason stated
+above. A Render instance is a Node client on a different address than this laptop — and a different address
+than the runner, too. The runner's `200` makes it likely, not certain. The order stands: deploy simulated,
+measure from the host's own egress, switch to live only if a real verdict comes back. See `docs/RENDER.md`
+§7.3.
 
 **What would fix it.** A provider-side exemption for `/clocked/*` for requests that present an API key —
 which is the normal shape for an API endpoint and the reason the support email asks for exactly that. No
 change on this side, and nothing in this repository attempts to look like a browser.
+
+#### 6.3.3 Answered by a cloud egress, and the answer is "not challenged"
+
+The open question above is whether the rule keys on the client or on the path to the host. A GitHub-hosted
+runner differs from this machine in both respects at once, so a successful run there separates them.
+`live-check` run 1, 2026-11-01T10:16:13Z, pure Node `clocked-sdk@0.7.0`:
+
+| Endpoint | HTTP | `cf-ray` | `cf-mitigated` | Verdict |
+| --- | --- | --- | --- | --- |
+| `POST /injection` | **200** | `…-MSP` | absent | injection 0.9957, critical |
+| `POST /pii` | **200** | `…-MSP` | absent | 4 entities |
+| `POST /script` | **200** | `…-MSP` | absent | benign 0.0026 |
+
+12 credits, 1 attempt per call, no retry, no proxy. Details and the full record: `TEST_REPORT.md` §4.4.
+
+So the refusal in §6.3 is **not** a rule against non-browser clients. It is a property of the path from this
+machine to the host — the same Node client shape is answered normally from a datacenter egress. The support
+request in §6.4 is therefore no longer a prerequisite for a hosted deployment; it is only a question about
+why one particular home/mobile path is challenged.
 
 #### Transport knobs that were checked
 

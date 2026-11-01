@@ -1,8 +1,10 @@
 # Render Blueprint — the deployment this project intends to use.
 #
 # Nothing here is deployed by the repository: Render reads this file only after
-# the owner connects the repository in the dashboard. Values marked
-# `sync: false` are prompted for at creation and stored by Render, never here.
+# the owner connects the repository in the dashboard. This file declares **no
+# secret**: creating the service asks for nothing, and the simulated deployment
+# therefore has no credential to leak. Secrets are added in the dashboard when a
+# later phase needs them, and are never written here.
 #
 # Verified against https://render.com/docs/free and /docs/web-services on 2026-11-01.
 services:
@@ -22,8 +24,7 @@ services:
       # Next 16 needs Node 20+; 22 matches the version this was tested on.
       - key: NODE_VERSION
         value: "22"
-      # Start simulated. Flip to live only after `npm run accept:live` succeeds
-      # from an egress that is not this machine (see docs/RENDER.md §6).
+      # Start simulated — and stay simulated until §10 of docs/RENDER.md is done.
       - key: CLOCKED_MODE
         value: mock
       - key: RATE_LIMIT_REQUESTS
@@ -34,15 +35,17 @@ services:
       # this service, so the header can be believed here.
       - key: TRUST_PROXY
         value: "1"
-      - key: CLOCKED_API_KEY
-        sync: false
       - key: TURNSTILE_ENABLED
         value: "false"
-      - key: TURNSTILE_SITE_KEY
-        sync: false
-      - key: TURNSTILE_SECRET
-        sync: false
-      - key: UPSTASH_REDIS_REST_URL
-        sync: false
-      - key: UPSTASH_REDIS_REST_TOKEN
-        sync: false
+      # No secret is declared here on purpose. A blueprint that declares
+      # `sync: false` variables makes the dashboard ask for them at creation
+      # time, and the first deployment should never be given a credential: the
+      # mock cannot use one and therefore cannot leak one.
+      #
+      # Add these in the dashboard, in this order, when the corresponding phase
+      # is actually being run (docs/RENDER.md §7.3, §8 phase 2, §10):
+      #   UPSTASH_REDIS_REST_URL    phase 2 — shared day ceiling, before live
+      #   UPSTASH_REDIS_REST_TOKEN  phase 2 — same
+      #   CLOCKED_API_KEY           phase 2 — only to switch to live
+      #   TURNSTILE_SITE_KEY        later  — needs the widget, see §5
+      #   TURNSTILE_SECRET          later  — same
