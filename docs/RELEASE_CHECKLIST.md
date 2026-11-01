@@ -175,10 +175,10 @@ it proves; a step that is skipped is a claim that has to be softened later.
 | 5 | Secret scan and deployment audit | §2 of this file, plus `npm run deploy:preflight` | the repo can be made public, and the host's environment cannot overspend or leak |
 | 6 | Create the public repository | owner | the rules' repository requirement |
 | 7 | Deploy with `CLOCKED_MODE=mock`, **no secret on the host** | Netlify project from `netlify.toml`; build `npm run build`, publish `.next` | the build runs on the host, and a wrong turn costs nothing — and there is no key present to leak (`NETLIFY.md` §8) |
-| 8 | Verify from outside | §5 of this file (`/api/status`, headers, cross-origin 403) | the deployed instance behaves like the local one |
-| 9 | Move the ceiling off the process **before** live | add `UPSTASH_REDIS_REST_URL`/`_TOKEN`; `/api/status` must report `admission.store: "redis"` and the counter must survive a restart | `RENDER.md` §10 — on a free instance an in-memory ceiling resets on every 15-minute sleep |
-| 10 | Switch to live | `CLOCKED_MODE=live`, `DAILY_SCREENS=20`, `RATE_LIMIT_REQUESTS=10`, redeploy | the demo screens for real, within a bounded budget |
-| 11 | Screen once in a private window | one-click example | the host's egress reaches Clocked — the only honest proof |
+| 8 | Verify from outside | `npm run check:deployed -- <url>` (§5 of this file for headers and the cross-origin 403) | the deployed instance reports the mode, stores and platform its configuration claims |
+| 9 | Move **both** counters off the process, before live | add `UPSTASH_REDIS_REST_URL`/`_TOKEN`; `/api/status` must report `store: "redis"` **and** `window.store: "redis"` | an invocation that starts empty cannot count what the previous one did (`NETLIFY.md` §12 step 1) |
+| 10 | Switch to live | `CLOCKED_MODE=live`, `DAILY_SCREENS=20`, `RATE_LIMIT_REQUESTS=10`, key, one redeploy (`NETLIFY.md` §11) | the demo screens for real, within a bounded budget |
+| 11 | Screen once from outside | `npm run check:deployed -- <url> --live --screen`, then confirm the key `trustroute:quota:<date>` in the Redis console | the host's egress reaches Clocked, and the budget it spent is in a store rather than in a process |
 | 12 | Record the demo | `docs/DEMO_RECORDING.md` | the video, in a mode the demo can actually produce |
 | 13 | Check the link as a stranger | private window, phone, no session | a judge can open it |
 | 14 | Fill the entry form | §7 of this file | the entry |

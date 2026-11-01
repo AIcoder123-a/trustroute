@@ -318,3 +318,16 @@ folds every visitor into 64 buckets, which is coarse but not exploitable.
 worst case to the number of concurrent invocations, the remaining budget is on every response, and a
 screening that the budget refused returns `429` rather than a fabricated verdict. **What it must not
 claim:** that the per-caller window limits one caller. It does not, and §12's table says why.
+
+Two operational consequences of the same design, both measured on 2026-11-01:
+
+- **`/api/status` reports configuration, not reachability.** It says `store: "redis"` when the two variables
+  are set, whether or not that Redis answers. An outage therefore looks healthy from the outside, and the
+  only signal is the screenings themselves: `503 quota_unavailable`, arriving in ~17 ms because a refused
+  connection fails immediately rather than waiting out the 3 s timeout. Treat a rise in that 503 as "the
+  shared store is gone", not as "the demo is broken".
+- **The audit and session trails are per invocation.** They are module-level arrays, which is exact on a
+  long-lived process and meaningless here: a judge who screens, waits fifteen minutes and opens the trail
+  may see an empty list. Nothing security-relevant depends on it — the records are content-free by design —
+  but it is a fidelity limit of this host, not a bug, and the fix would be the same shared store the
+  counters already use.

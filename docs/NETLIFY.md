@@ -122,6 +122,8 @@ key resolves to the labelled simulator, so the created service holds no secret a
 
 `npm run deploy:preflight` with the phase-1 environment reports **8 passed, 0 warnings, READY**.
 
+Run by the owner on 2026-11-01; the result is in §9.1.
+
 ## 6. Phase 2 — live, and only after the ceiling is real
 
 Order matters, and on this host it matters even more than on Render, because there is no instance lifetime
@@ -140,20 +142,29 @@ If step 4 returns `Screening unavailable — manual review required`, the servic
 too. Switch `CLOCKED_MODE` back to `mock` and say so — the product refuses to fake a verdict, and so should
 the deployment.
 
-## 7. What is still unproven
+The exact values, the browser steps and the run sheet are §11 and §12.
+
+## 7. What phase 1 settled, and what is still unproven
+
+Settled on 2026-11-01 by the run in §9.1: the adapter packages this app, `clocked-sdk` resolves inside the
+function, a screening completes on the host, and the two runtime-only variables arrived. Three things that
+cannot be settled that way remain:
 
 - **Whether Netlify's egress reaches the Clocked API.** The GitHub Actions run proved a Node client from a
   datacenter can (`TEST_REPORT.md` §4.4), which falsified the "non-browser clients are refused everywhere"
-  reading — but Netlify's functions run from a different network. Only step 4 above answers it.
-- **Whether `next.config.ts` header rules survive into a function response.** Netlify documents that
-  custom headers do not apply to function-served content, and the adapter generated no header rules for
-  this project. The app sets them itself, so this is checked in §9 step 4 rather than assumed either way.
-- **Whether the packaged function contains a working `clocked-sdk`.** §4.6 is why it was not proven
-  locally; the package appears in the standalone output, and one mock screen after deploy proves the import
-  resolves.
+  reading — but Netlify's functions run from a different network, and a mock screening never leaves the
+  host. Only §12 step 2 answers it.
+- **Whether `next.config.ts` header rules survive into a function response.** Netlify documents that custom
+  headers do not apply to function-served content, and the adapter generated no header rules for this
+  project. The app sets them itself, so §9 step 4 measured it rather than assuming either way.
+- **Whether the audit trail and the session trail mean anything here.** They are module-level arrays
+  (`lib/audit.ts`), which is exact on one long-lived process and per invocation on this host: after an idle
+  gap the trail can be empty while the screening history it should show is not. Nothing security-relevant
+  depends on it, but a judge clicking *session trail* may see fewer events than they produced, and that is
+  worth knowing before it is mistaken for a bug.
 
-None of these can be settled from this machine. Each is a check with a named expected result, and all three
-cost nothing to run.
+None of the first two can be settled from this machine. Each is a check with a named expected result, and
+both cost nothing to run.
 
 ## 8. Creating the service (owner, in the browser)
 
@@ -196,6 +207,20 @@ cost nothing to run.
 6. Re-check `/api/status` after 20 minutes of no traffic: it must answer immediately. Netlify does not
    sleep, and this is the check that proves the difference from Render.
 
+### 9.1 The phase-1 run (2026-11-01, owner)
+
+Three consecutive **Classic prompt-injection** screenings, from the browser, on the deployed site — all
+three completed normally. That settles the three things §7 listed as unproven: the adapter packages this
+app, `clocked-sdk` resolves inside the function, and a screening completes on the host. It also settles the
+two variables that cannot live in a config file: `/api/status` reports `platform: "netlify"` and
+`trustProxy: true`, so `PLATFORM` and `TRUST_PROXY` did reach the runtime rather than the build.
+
+One detail worth recording, because a judge will hit it: the first attempt was unreadable until Chrome's
+**auto-translate** was switched off for the site. Translation rewrites text nodes, so the evidence panel's
+character offsets no longer point at the text they describe — the screening was fine, the view was not. The
+standard remedy is `translate="no"` on the document; it is untested here and belongs in its own change
+rather than smuggled into a deploy whose purpose is something else.
+
 ## 10. Costs, failure modes, rollback
 
 - **A production deploy is 15 credits.** Ten deploys is half the month. Batch changes.
@@ -206,3 +231,135 @@ cost nothing to run.
 - **Region**: functions default to `cmh` (Ohio) and can be changed in *Project configuration → Build &
   deploy → Functions region*. It is not fixed at creation the way Render's is.
 - **TLS, custom domain, deploy previews** are all included; none are needed for judging.
+
+
+## 11. Enabling live: the exact variables
+
+Live is not a code change — the deployed build already contains the live path. It is five environment
+values, one of which is a secret, and one redeploy.
+
+| Key | Value | Secret | Read by |
+| --- | --- | --- | --- |
+| `CLOCKED_MODE` | `live` | no | `lib/config.ts` — an existing variable, edited rather than added |
+| `CLOCKED_API_KEY` | the rotated key | **yes** | `lib/clocked/` — never sent to the browser |
+| `UPSTASH_REDIS_REST_URL` | `https://<name>.upstash.io` | treat as one | `lib/redis-rest.ts` |
+| `UPSTASH_REDIS_REST_TOKEN` | the database token | **yes** | `lib/redis-rest.ts` |
+| `DAILY_SCREENS` | `20` | no | `lib/config.ts` — the money ceiling |
+| `RATE_LIMIT_REQUESTS` | `10` | no | `lib/config.ts` — per caller per 5 min |
+| `TRUST_PROXY`, `PLATFORM` | `1`, `netlify` | no | already set during phase 1; do not touch |
+
+Do **not** add `TURNSTILE_*`. §13 says why, and the short version is that the shipped bundle has no widget,
+so switching the gate on refuses every screening with `403 challenge_required`.
+
+Where to put them matters, and the reason is not obvious:
+
+- **The UI, not `netlify.toml`.** A value in the config file reaches the build; only a value in the UI
+  reaches the function at runtime. A `DAILY_SCREENS` in `netlify.toml` would silently do nothing.
+- **Scopes are a Pro feature**, so on the free plan a variable applies to all scopes and there is nothing to
+  tick. Adding it is enough.
+- **A config-file value overrides the same key in the UI.** Nothing in `netlify.toml` uses these names
+  (`NODE_VERSION` and `NETLIFY_NEXT_SKEW_PROTECTION` are the only two), so there is no collision to worry
+  about — but adding one later would silently win.
+
+Before the redeploy, check the intended environment with the audit that reads it:
+
+```bash
+# the values, minus the two secrets, are enough to catch the mistakes that matter
+CLOCKED_MODE=live CLOCKED_API_KEY=<key> DAILY_SCREENS=20 RATE_LIMIT_REQUESTS=10 TRUST_PROXY=1 PLATFORM=netlify UPSTASH_REDIS_REST_URL=<url> UPSTASH_REDIS_REST_TOKEN=<token> npm run deploy:preflight
+```
+
+Expected: **`READY WITH CAVEATS`**, the single caveat being `turnstile`. A `FAIL quota_store` means one of
+the two Redis variables is missing in the environment being checked — on the host that is exactly the state
+that silently spends money, so it is a hard stop rather than a warning.
+
+**The cap, chosen rather than defaulted.** `DAILY_SCREENS=20` is 240–380 credits a day at 12–19 credits a
+screen. Against a 10,000-credit balance that is 26–41 days; against 20,000 it is 52–83. A live default of 60
+would be 720–1,140 a day — inside a three-week judging window that is most of a 20,000-credit balance spent
+on curiosity clicks. The cap can be raised later; it cannot be un-spent.
+
+## 12. The live acceptance run
+
+`scripts/deployed-check.mjs` exists for this. It reads `/api/status` and asserts what the deployment *says*
+against what the phase expects, and it spends nothing unless `--screen` is passed.
+
+```bash
+npm run check:deployed -- https://<site>.netlify.app --live            # free: status only
+npm run check:deployed -- https://<site>.netlify.app --live --screen   # one screening, 3 real calls
+```
+
+Run in this order, and stop at the first failure.
+
+| # | Step | Expected | What a deviation means |
+| --- | --- | --- | --- |
+| 1 | `--live`, read-only | 7–8 `PASS`, one `WARN turnstile` | `FAIL mode` → `CLOCKED_MODE` never reached the function; `FAIL quota_store` or `window_store` → the Redis pair did not; `FAIL platform` → `PLATFORM` did not |
+| 2 | `--live --screen` | `200`, three stages `ok`, `daily left` = 19 when 20 is the cap, credits reported | `503 quota_unavailable` → Redis is configured but unreachable, nothing was screened; `403 challenge_required` → a `TURNSTILE_*` variable was set; `200` with `decision` that says unavailable → the host's egress is challenged (§12.1) |
+| 3 | Upstash console → **Data Browser** → search `trustroute:quota:` | the key for today's UTC date, value `1`, a TTL counting down to midnight | no key at all = the counter is in memory and `--screen` was charged to a ceiling that does not exist |
+| 4 | Wait ≥ 15 min with no traffic, run `--screen` again | `daily left` = 18 | 19 again = a fresh instance started from zero, i.e. memory |
+| 5 | Same console, `trustroute:win:` | one key per caller, expiring in ≤ 5 min | absent = the per-caller window is per invocation and therefore not counting |
+
+Steps 2 and 4 spend 12–19 credits each. **Step 3 is the one that proves durability** and costs nothing:
+a memory fallback cannot create a key in somebody else's database. Step 4 proves the same thing from the
+outside, which is why it is worth the second screening — it is the only evidence a reader can reproduce
+without access to the store.
+
+### 12.1 If step 2 reports itself unavailable
+
+`policy.screening === "unavailable"` means the detectors did not answer — the edge challenged the host, the
+same way it challenged this machine (`API_INTEGRATION.md` §6.3). The product refuses to fake a verdict, and
+so should the deployment: set `CLOCKED_MODE=mock`, redeploy, and the site is honest again. Keep the mock
+deployment and attach the run to the provider escalation; do not retry it hoping for a different answer.
+
+### 12.2 Fail-closed, measured rather than asserted
+
+The one test that cannot be run against the live site without breaking it is "what happens when Redis is
+gone" — so it was run locally, on the real route, on 2026-11-01:
+
+| Environment | Request | Result |
+| --- | --- | --- |
+| `UPSTASH_REDIS_REST_URL=http://127.0.0.1:9` (nothing listening) | valid body | **`503 quota_unavailable` in 17 ms**, nothing screened, no credits |
+| same | empty `text` | `400 invalid_input` — and the counter is not reached, because it is charged after validation |
+| no Redis variables | valid body | `200`, served from the in-process counter |
+
+17 ms matters: a refused connection fails immediately, so an outage does not turn into a 3-second hang per
+request followed by a 60-second function kill. And the `503` is a refusal rather than a fallback — an
+unreadable budget is treated as no budget, which is the only defensible reading when the spend is on
+somebody else's account.
+
+## 13. Turnstile: why it stays off for the first live window
+
+**The gate cannot be switched on today**, and this is a fact about the build rather than a preference: the
+browser never sends `x-turnstile-token` (`components/Workbench.tsx` posts four fields and no header), so
+`TURNSTILE_ENABLED=true` would make `verifyTurnstile` answer `missing_token` for every request and the route
+would return `403 challenge_required` before anything was read. Every judge would see a refusal.
+
+What that leaves, honestly:
+
+| Gate | What it stops | What it does not |
+| --- | --- | --- |
+| Same-origin check | a stranger's page triggering a screening in a visitor's browser | anything with no `Origin` header — `curl` is accepted on purpose, so operational checks work |
+| Per-caller window, in Redis | one visitor in a loop | a script that rotates addresses, and it is 10 per 5 min, not 10 a day |
+| Daily quota, in Redis | the bill | nothing — but it is spent by the first caller to arrive, so a bot can take the whole day from the judges |
+| `DAILY_SCREENS=20` | the size of that loss | the loss |
+
+So the risk of shipping without Turnstile is **availability, not money**: the worst case is one day's cap
+(240–380 credits) spent by something that is not a judge, and a judge who then reads "this demo has used its
+screening allowance for today" — which is true, specific, and not a fake verdict.
+
+Three things make that acceptable for the first window, and all three are already in place:
+
+1. **The cap bounds the damage** at one day's worth, and it resets at UTC midnight rather than needing
+   intervention.
+2. **The kill switch is one variable.** `CLOCKED_MODE=mock` plus a redeploy returns the site to a fully
+   usable, zero-cost demo in about three minutes. That is the answer to abuse, and it costs 15 credits.
+3. **The site can stay unpublished** until the entry is submitted, so the exposure window starts when the
+   owner chooses it.
+
+**Revisit it if any of these happen**, and not before: the day's cap is exhausted before the first judge is
+expected; the `trustroute:quota:` value rises by double digits inside a few minutes; or credits fall with
+no matching human sessions in the site's own analytics.
+
+Enabling it later is a small, contained change — a `Turnstile` component that loads
+`https://challenges.cloudflare.com/turnstile/v0/api.js`, one `x-turnstile-token` header on the existing
+`fetch` in `components/Workbench.tsx`, the public site key added to the `/api/status` payload (the app reads
+it but does not publish it), and then `TURNSTILE_ENABLED=true` with `TURNSTILE_SECRET` in the UI. It is a
+deploy, so it is not free: batch it with the next change that has to happen anyway.

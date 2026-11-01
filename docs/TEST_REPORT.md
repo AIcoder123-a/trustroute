@@ -233,15 +233,31 @@ from all three endpoints, with no challenge and no retry. The `403` in §4.1 is 
 machine's path to the host*, not of server-side clients in general — which is the difference between
 "Render cannot reach the API" and "Render probably can, and one real screen will confirm it".
 
-**What it does not establish.** That **Render's** egress behaves the same way. It is a different network, and
-the only in-service proof is a real screen from the deployed host (`docs/RENDER.md` §7.3). It also says
-nothing about the top of the funnel: per-caller limits and the daily ceiling are still the controls that
-protect the balance, and §4.4 spent nothing on them.
+**What it does not establish.** That **the deployed host's** egress behaves the same way. It is a different
+network, and the only in-service proof is a real screen from the deployed instance
+(`docs/NETLIFY.md` §12 step 2). It also says nothing about the top of the funnel: per-caller limits and the
+daily ceiling are still the controls that protect the balance, and §4.4 spent nothing on them.
 
 **Evidence retained.** The artifact is `live-acceptance.json` (schema `trustroute.live-acceptance/2`,
 retained 7 days on the run page), and a copy is kept locally in `.local/runs/` (git-ignored). It records
 status, shape, verdicts, credits, `cf-ray` and a credential *fingerprint* — never the key, the request text
 or an entity value; the script refuses to write the report at all if the key appears anywhere in it.
+
+### 4.5 The deployed instance, simulated (2026-11-01)
+
+Phase 1 exists: a Netlify project created from `netlify.toml`, three non-secret runtime values in the UI,
+and **no credential on the host at all**. The owner ran three consecutive Classic prompt-injection
+screenings in a browser on the deployed site; all three completed normally.
+
+Proven at the layer each check can reach: the OpenNext adapter packages this app and serves it from a
+function (`docs/NETLIFY.md` §4.6 records why that could not be reproduced on Windows), `clocked-sdk`
+resolves inside that function, a screening completes on the host, and `/api/status` reports
+`platform: "netlify"` with `trustProxy: true` — so the two variables `netlify.toml` cannot deliver to the
+function runtime did arrive through the UI.
+
+Not proven, and not claimed: anything about the live path from this host. A simulated screening never leaves
+the process, so the egress question in §4.1/§6.3 is untouched, and the shared counters were not exercised
+because phase 1 runs without Redis. Both are steps 2–4 of `docs/NETLIFY.md` §12.
 
 ## 5. Validation and abuse-control responses (curl, real server)
 
@@ -269,6 +285,19 @@ header at all — the endpoint is not a public API that a third-party page may c
 The 429 carries `Retry-After`; the workbench reads that header and prints the wait in seconds instead of a
 generic "try later", and surfaces the server's `hint` on a 503 so a misconfigured deployment tells the
 operator which variable is missing. Both paths state that nothing was screened and nothing was released.
+
+Re-run on 2026-11-01 against the same route with a **configured but unreachable** Redis
+(`UPSTASH_REDIS_REST_URL=http://127.0.0.1:9`), to check the one refusal that protects money:
+
+```
+POST /api/analyze  {"text":"", …}                 → 400  invalid_input, 0.19 s
+POST /api/analyze  valid body                     → 503  {"error":"quota_unavailable", …} in 0.017 s
+POST /api/analyze  valid body, no Redis configured → 200  served from the in-process counter
+```
+
+The order is the point: a malformed request is refused **before** the day's counter is touched, so a typo
+cannot spend the deployment's allowance. The `503` arrives in 17 ms because a refused connection fails
+immediately — an outage does not become a 3-second stall per request followed by a function timeout.
 
 ## 6. Manual review pass
 
