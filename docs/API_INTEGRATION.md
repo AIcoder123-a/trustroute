@@ -356,6 +356,29 @@ Exit codes: `0` all three answered · `1` a call failed with a response · `2` n
 · `4` the report contained the key (nothing is written in that case) · `5` nothing reached the API ·
 `6` preflight only: a shell export is shadowing `.env.local`.
 
+#### 6.3.1 Why the timeouts are not "the API is down"
+
+Credential-free probes on the same machine, same minute (2026-11-01):
+
+| Probe | Path | Result |
+| --- | --- | --- |
+| `curl https://clocked.rezolve.ai/` ×6 | through the loopback proxy the environment exports (`HTTP(S)_PROXY`) | 3 × `403` in ~1.0 s, 3 × no response after the 12 s timeout |
+| Node `fetch('https://example.com')` | direct — undici ignores proxy variables by design | `200` in 1.1 s |
+| Node `fetch('https://clocked.rezolve.ai/')` | direct | `UND_ERR_CONNECT_TIMEOUT` |
+
+Two conclusions, and they point at different owners:
+
+1. **Not a general egress block.** Another HTTPS host answers in about a second from the same process,
+   so the machine can reach the internet. What fails is the TCP connection to this host's anycast
+   addresses, intermittently, from this network.
+2. **Not a credential question.** The calls that do connect are refused with an HTML challenge before
+   authentication, and the ones that do not connect never present a credential at all.
+
+The product does not use an environment proxy: `fetch` in Node ignores `HTTP(S)_PROXY`, so a deployed
+instance will behave like the direct probes above. `CLOCKED_PROXY` exists for a proxy-shaped network, and
+needs the optional `undici` package (`npm i -D undici`); it was not installed for these runs, so every
+number in §6.3 is a direct-connection number.
+
 #### Transport knobs that were checked
 
 The SDK exposes enough to change the transport without changing the product, and the adapter now honours
