@@ -13,15 +13,36 @@ steps marked **owner** need the account holder's decision or credentials.
 | # | Decision | Why it blocks the release | Default if undecided |
 | --- | --- | --- | --- |
 | 0.1 | Repository name, owner account, public or private | the rules require a **public** repository with setup instructions and development history | a public repo named `trustroute` under the entrant's account |
-| 0.2 | Licence | the rules require **no particular licence** (see `COMPETITION_RULES.md` §5.2); a repo with no licence is "all rights reserved" by default | state the choice in `README.md` rather than leaving it implicit |
+| 0.2 | Licence | the rules require **no particular licence** (see `COMPETITION_RULES.md` §5.2); a repo with no licence is "all rights reserved" by default | §0.2.1 analyses both; the default if undecided is to publish **without** a licence, with the copyright line in `README.md` |
 | 0.3 | Which `docs/` files ship publicly | `SUBMISSION_DRAFT.md`, `COMPETITION_RULES.md` and this file are working notes; the rules only ask for README + setup + history | ship them (they are honest and contain no key), or move them out before the first push |
-| 0.4 | Demo host, and whether it runs **live** or **simulated** | a live public demo spends the account's credits; a simulated one cannot be mistaken for a verdict if the banner is up | deploy simulated first, switch to live only after `accept:live` succeeds from the host's own egress |
+| 0.4 | Demo host, and whether it runs **live** or **simulated** | a live public demo spends the account's credits; a simulated one cannot be mistaken for a verdict if the banner is up | Render free, one instance, simulated first; switch to live only after `accept:live` succeeds from the host's own egress (`DEPLOYMENT.md` §4.1) |
 | 0.5 | Whether to wire the Wise question to the organiser | prize payment to a mainland-China recipient is unverified (`COMPETITION_RULES.md` §3.1) | ask before the entry is final |
+
+### 0.2.1 Licence: all rights reserved vs MIT
+
+The rules ask for a public repository and say nothing about licensing, so this is a choice about what the
+work is *for* after the challenge. Both options are defensible; they are not equivalent.
+
+| | No licence (all rights reserved) | MIT |
+| --- | --- | --- |
+| What a reader may do | read the code on GitHub, which is all a judge needs | read, run, modify, redistribute, including commercially, with the copyright notice kept |
+| Signal to a reviewer | "this is a portfolio piece, not a library" — some read it as unfinished or unfriendly | unambiguous: reusable, with attribution |
+| Downside | legally ambiguous in practice — GitHub's own terms let others view and fork, so "reserved" is not the same as "private"; anyone who wants to reuse it must contact you | someone can deploy the same demo, resell it, or wrap it in a product; you keep copyright but not exclusivity |
+| Effect on the entry | none — the rules require neither | none — a licence does not change eligibility or judging |
+| Reversibility | you can add MIT later at any time | you cannot withdraw the rights already granted for released versions |
+
+Recommendation: **MIT if the project is meant to be a portfolio artefact** (a security-gateway demo that
+others can run is worth more to the author than the exclusivity it loses), **no licence if the intent is
+to keep the design closed** while satisfying the rules. Either way, state the choice explicitly in
+`README.md` — an implicit licence is the one thing that reads as an oversight rather than a decision.
+Do not invent a "source-available, non-commercial" licence for this: a hand-written clause is harder to
+read than MIT and has no legal review behind it.
+
 
 ## 1. Pre-flight on the machine
 
 ```bash
-npm run verify                  # typecheck, lint, 132 assertions, production build
+npm run verify                  # typecheck, lint, 133 assertions, production build
 npx playwright test             # 46 runs: 44 passing, 2 deliberate skips
 npm run accept:live             # live status, shape, verdict, data source — or the refusal
 ```
@@ -126,3 +147,28 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST https://<demo-host>/api/analyze
       change, because it reads the key from the environment on every request
 - [ ] Keep the recorded commit id, the acceptance output and the video together, outside the repository
 - [ ] Re-read the rules page once more before the deadline; the `Changes` section is the first thing to check
+
+## 9. The launch, in order
+
+One ordered pass, so the ordering decisions are made once rather than in the moment. Each step states what
+it proves; a step that is skipped is a claim that has to be softened later.
+
+| # | Step | Command / action | Proves |
+| --- | --- | --- | --- |
+| 1 | Freeze the code | `npm run verify && npx playwright test` | the commit being published is the commit that passed |
+| 2 | Check the credential | `npm run accept:check` | the key comes from `.env.local`, is the rotated one, and is not a stale shell export |
+| 3 | Measure the server path | `npm run accept:live` (hotspot or CI, `DEPLOYMENT.md` §3) | whether a non-browser client can reach the API at all |
+| 4 | Decide the tier | `DEPLOYMENT.md` §7 A/B/C | what the entry is allowed to claim |
+| 5 | Secret scan | §2 of this file | the repo can be made public |
+| 6 | Create the public repository | owner | the rules' repository requirement |
+| 7 | Deploy with `CLOCKED_MODE=mock` | Render: build `npm ci && npm run build`, start `npx next start -p $PORT` | the build runs on the host, and a wrong turn costs nothing |
+| 8 | Verify from outside | §5 of this file (`/api/status`, headers, cross-origin 403) | the deployed instance behaves like the local one |
+| 9 | Switch to live, if step 3 passed | set `CLOCKED_MODE=live`, `DAILY_SCREENS=40`, `RATE_LIMIT_REQUESTS=10`, redeploy | the demo screens for real, within a bounded budget |
+| 10 | Screen once in a private window | one-click example | the host's egress reaches Clocked — the only honest proof |
+| 11 | Record the demo | `docs/DEMO_RECORDING.md` | the video, in a mode the demo can actually produce |
+| 12 | Check the link as a stranger | private window, phone, no session | a judge can open it |
+| 13 | Fill the entry form | §7 of this file | the entry |
+| 14 | Watch the balance for 24 h | `X-Daily-Remaining`, provider dashboard | the spend is what was planned |
+
+Two rules that outrank the order: never publish with the key in a variable the browser can read, and never
+leave the demo live with an unbounded budget on a host that can start more than one instance.

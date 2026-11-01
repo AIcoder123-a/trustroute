@@ -32,6 +32,17 @@ export async function GET() {
         dailyScreens: LIMITS.dailyScreens,
         concurrentPerCaller: LIMITS.concurrentPerCaller,
       },
+      /**
+       * Published on purpose: the counters live in this process. On one instance
+       * the daily ceiling is exact; on a host that runs several it is
+       * `instances × dailyScreens`, and a cold start resets it. Saying so here
+       * stops an operator from reading the limit as a deployment-wide promise.
+       * See docs/SECURITY_NOTES.md §12 and docs/DEPLOYMENT.md §5.2.
+       */
+      admission: {
+        store: 'in-memory',
+        sharedAcrossInstances: false,
+      },
     },
     { headers: { 'Cache-Control': 'no-store' } },
   );

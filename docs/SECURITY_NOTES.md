@@ -200,3 +200,31 @@ Still weak, and stated so it is not mistaken for solved:
   sets it (Vercel, Cloudflare) that is the correct behaviour; exposed directly, it is not.
 - No CSRF token. The origin check is the control; it is sufficient for a JSON-only API with no cookie
   session, which is what this is.
+
+## 12. The rate limiter is a speed bump on a multi-instance host (audited 2026-11-01)
+
+Asked directly in review: are the IP, concurrency and daily limits dependent on single-process memory? Yes.
+Both stores are module-level `Map`s — `windows` in `lib/ratelimit.ts` and the admission state in
+`lib/admission.ts` — so the limits are exact only while exactly one process serves the demo.
+
+| Property | Consequence |
+| --- | --- |
+| State is per process | N instances give `N × DAILY_SCREENS` of headroom, and the concurrency slot is per instance |
+| State dies with the process | a cold start or a redeploy resets the day's count; scale-to-zero forgets it every time the demo sleeps |
+| The window is per caller key | the key is `x-forwarded-for[0]`, trustworthy only when the host's edge rewrites the header — direct-to-origin, a client can present a new IP per request |
+| Nothing is signed | a request that reaches the process is trusted to have come through the edge |
+
+So the honest statement is: on Vercel (or any host that runs several instances) the daily ceiling is a
+speed bump, not a ceiling. On a single long-lived process it is exact. That is the operational reason
+`docs/DEPLOYMENT.md` §4.1 prefers one free instance over a serverless platform with better limits.
+
+The two controls that would make it exact — a Turnstile gate (free, unlimited verifications, no shared
+state) and a shared atomic counter (Upstash free tier, three commands per screen, fail-closed) — are
+specified in `docs/DEPLOYMENT.md` §5.2 and deliberately **not implemented**: each needs an account and an
+accepted failure mode, and neither can be exercised in this repository's test suite. Until one exists, the
+deployment rule is one instance, `DAILY_SCREENS ≤ 40`, and watch `X-Daily-Remaining`.
+
+What the product does today to keep the damage bounded: defaults are mode-derived (60 live / 240 mock), the
+remaining daily budget is returned on every response, `GET /api/status` publishes the configured ceilings
+without the key, and the same-origin check stops *other pages* from spending credits — it never claimed to
+stop a script, and §6 of this file lists that as a deliberate weakness rather than a control.

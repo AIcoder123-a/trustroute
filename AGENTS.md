@@ -82,7 +82,9 @@ npm run lint         # eslint (next/core-web-vitals + typescript)
 npm test             # vitest: policy, redaction, highlight, report, validation, rate limit, pipeline
 npm run test:e2e     # playwright desktop + mobile (starts its own server on :3100)
 npm run verify       # typecheck + lint + test + build
-npm run verify:live  # server-side acceptance: three real Clocked calls through the SDK; needs CLOCKED_API_KEY
+npm run accept:check # credential preflight: source file, fingerprint, nothing sent
+npm run accept:live  # server-side acceptance: three real Clocked calls through the SDK (key from .env.local)
+npm run verify:live  # alias of accept:live
 npm run verify:live:browser  # the same calls through Chromium (see §6 on the edge challenge)
 node scripts/collect-diagnostics.mjs  # no credential; writes .local/support/ (git-ignored)
 ```
@@ -100,16 +102,17 @@ Playwright downloads browsers once: `npx playwright install chromium`.
 - Colours live in `app/globals.css` under `@theme`; do not hardcode hex values in components except for
   the few semantic tints already established.
 
-## 6. Current state (2026-10-30)
+## 6. Current state (2026-11-01)
 
 | Area | State |
 | --- | --- |
 | Build, typecheck, lint | clean, 0 warnings |
-| Unit/integration tests | 101 passing (13 files, incl. contract tests against recorded real responses, a policy-trace suite and a credential-hygiene suite) |
-| Browser tests | 24 passing (12 tests × desktop + mobile) |
-| Live Clocked detections | **verified**: `/injection` 0.9957 critical, `/pii` 6 entities incl. both custom kinds, `/script` 0.9948 malicious. 12 credits / $0.0024 per full screen |
-| Live path from the server | **blocked**: the edge challenges non-browser clients (`403 cf-mitigated: challenge`) before authentication; Chromium from the same IP succeeds. Falls closed to REVIEW with `edge_interstitial` |
-| Deployment | not deployed; feasibility and the pre-deploy experiment are in `docs/DEPLOYMENT.md` |
+| Unit/integration tests | 133 passing (17 files, incl. contract tests against recorded real responses, a policy-trace suite, a credential-hygiene suite, and guards for origin, admission and HTTP limits) |
+| Browser tests | 44 passing, 2 deliberate skips (23 scenarios × desktop + mobile) |
+| Live Clocked detections | **verified 2026-10-30 through a browser**: `/injection` 0.9957 critical, `/pii` 6 entities incl. both custom kinds, `/script` 0.9948 malicious. 12 credits / $0.0024 per full screen |
+| Live path from the server | **refused, and partly unreachable**: `403 cf-mitigated: challenge` from the edge before authentication on the calls that connect, `UND_ERR_CONNECT_TIMEOUT` on the calls that do not (2026-11-01, `docs/API_INTEGRATION.md` §6.3). Both end in `Screening unavailable` |
+| Rate limiting | in-process `Map`s only — exact on one instance, `N ×` on many (`docs/SECURITY_NOTES.md` §12) |
+| Deployment | not deployed; host comparison, the Vercel-clause analysis and the free shared-counter design are in `docs/DEPLOYMENT.md` §4–5 |
 | Git remote | none; local commits only |
 
 Open items and blockers are tracked in `docs/IMPLEMENTATION_PLAN.md` §6–7.

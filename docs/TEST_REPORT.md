@@ -30,7 +30,7 @@ vitest 5.0.5, re-verified with the full suite.
 
 ```
 Test Files  17 passed (17)
-     Tests  132 passed (132)
+     Tests  133 passed (133)
 ```
 
 | File | Assertions | Covers |
@@ -50,7 +50,7 @@ Test Files  17 passed (17)
 | `tests/copy-consistency.test.ts` | 8 | no mock label claims Clocked as its source; every mock source label reads as simulated; the policy engine attributes a detection to the API only in live mode; a mock report is not "compared with Clocked"; the claim cannot be reintroduced as a literal in `components/` |
 | `tests/origin.test.ts` | 6 | no `Origin` accepted, same host accepted, `x-forwarded-host` accepted, another site refused, `Origin: null` refused, an unparsable origin refused rather than trusted |
 | `tests/admission.test.ts` | 6 | per-caller window, concurrency slot and release, one caller cannot consume another's slot, whole-deployment daily ceiling, reset at UTC midnight |
-| `tests/http-guards.test.ts` | 6 | cross-origin POST → 403 on both routes, oversized body → 413 before parsing, malformed JSON → 400 not 500, missing text → 400, exhausted window → 429 with `Retry-After` |
+| `tests/http-guards.test.ts` | 7 | cross-origin POST → 403 on both routes, oversized body → 413 before parsing, malformed JSON → 400 not 500, missing text → 400, exhausted window → 429 with `Retry-After`, `/api/status` publishes the limits and `admission.store: in-memory` without any credential-shaped string |
 | `tests/live-contract.test.ts` | 11 | recorded **real** 200 responses (`tests/fixtures/clocked-*.json`) normalise into the domain types; every span slices to its value; the rebuilt masked copy equals Clocked's own `anonymized_text`; Inspect offsets are document offsets and produce lines 1–4; the fixtures contain no credential |
 
 The two invariants that matter most, both enforced by tests:

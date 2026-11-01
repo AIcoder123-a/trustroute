@@ -293,37 +293,57 @@ carries no `Authorization` header and no page script can read the credential. Th
 the first version passed it into `page.evaluate`. The details, the impact assessment and the rotation
 advice are in `docs/SECURITY_NOTES.md` §7.
 
-### 6.3 Server-side acceptance — 2026-10-31
+### 6.3 Server-side acceptance — last run 2026-11-01
 
 The browser harness proves the key works. It does not prove the product works, because the product calls
 Clocked from Node. That question has its own program:
 
 ```bash
-CLOCKED_API_KEY=… npm run accept:live        # alias of verify:live
+npm run accept:check      # preflight: which file the key came from, its fingerprint; sends nothing
+npm run accept:live       # alias of verify:live; the three real calls
 ```
+
+The key is loaded by the npm script itself (`node --env-file-if-exists=.env.local`), so a rotated key is
+picked up by editing one file. A variable already exported in the shell takes precedence over the file —
+Node's documented behaviour, and the exact way a stale credential survives a rotation — so the preflight
+compares the two in memory and warns when they disagree. Neither command prints the key: the preflight
+prints its **length** and a `sha256:` **8-character fingerprint**, which identifies which key was used
+without being reversible. After the 2026-10-31 rotation the fingerprint changed accordingly, which is how
+the two runs in this document are told apart.
 
 `scripts/live-acceptance.mjs` imports `clocked-sdk` directly, calls the three endpoints from the Node
 process, and records what came back in `.local/live-acceptance.json` (git-ignored):
 
-- HTTP status, and the edge headers `cf-ray`, `cf-mitigated`, `server-timing`, `x-clocked-credits`
+- HTTP status, `content-type`, and the edge headers `cf-ray`, `cf-mitigated`, `server-timing`, `x-clocked-credits`
+- **one category per call**, because "403" alone conflates four different things:
+  `answered` · `edge_challenge` · `auth_failed` · `forbidden` · `credits` · `rate_limited` · `rejected` ·
+  `timeout` · `connection_error`
+- the transport `cause` chain (`UND_ERR_CONNECT_TIMEOUT`, `ENOTFOUND`, `CERT_HAS_EXPIRED`…), unwrapped from
+  undici's generic `fetch failed`, so a connect timeout is not reported as an API problem
 - response shape — field names and types, never content
 - the actual verdict, probabilities, entity kinds/offsets (values never printed), evidence counts
-- credits, cost, attempts, idempotency key
+- credits, cost, attempts, idempotency key, and the credential fingerprint
 - the data source, spelled out: *Clocked API via clocked-sdk (server-side Node process)*
 
-Result on 2026-10-31, from this machine, no browser involved:
+Result on 2026-11-01, from this machine, no browser involved, `CLOCKED_MAX_ATTEMPTS=1`:
 
-| Endpoint | HTTP | Latency | Verdict | Credits | `cf-mitigated` | `cf-ray` |
-| --- | --- | --- | --- | --- | --- | --- |
-| `POST /injection` | **403** | 752 ms | — (`PermissionDeniedError`) | 0 | `challenge` | `a531f1ebff0fcf1b-SJC` |
-| `POST /pii` | **403** | 653 ms | — | 0 | `challenge` | `a531f1f04dc516ff-SJC` |
-| `POST /script` | **403** | 713 ms | — | 0 | `challenge` | `a531f1f48e1a15b0-SJC` |
+| Endpoint | Category | HTTP | Latency | Response type | Verdict | Credits | `cf-ray` |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `POST /injection` | `timeout` | — | 10,680 ms | — | — (`ConnectionError`) | 0 | — |
+| `POST /pii` | `timeout` | — | 10,660 ms | — | — | 0 | — |
+| `POST /script` | `edge_challenge` | **403** | 728 ms | `text/html` | — (`PermissionDeniedError`) | 0 | `a5384d90de0f45f7-SEA` |
 
-**What this establishes.** The server-side path is refused at the edge, before authentication and before
-billing (0 credits, `x-clocked-credits` absent). The refusal is an HTML challenge, not a JSON error, so it
-is not the key, the body, the method or the endpoint. It came from `-SJC` this time, where the earlier
-session recorded `-SEA` for Node and `-CMH` for Chromium — the POP is not stable across attempts, which is
-one more reason not to build a theory on "same IP".
+The two timeouts are `fetch failed ← UND_ERR_CONNECT_TIMEOUT: Connect Timeout Error (attempted addresses:
+172.67.163.50:443, 104.21.65.122:443, timeout: 10000ms)` — both Cloudflare anycast addresses, no TCP
+connection, no TLS, no HTTP status, so nothing about the credential or the account. The third call, seconds
+later, reached the edge and was challenged. An earlier run the same evening produced the mirror image
+(two challenges with `-SEA` and one connect timeout), which is the point: **this network is unstable at the
+connect stage, and a run that reports one number for all three endpoints would describe the wrong fault.**
+
+**What this establishes.** When a request reaches the edge, it is refused before authentication and before
+billing (0 credits, `x-clocked-credits` absent), with an HTML challenge rather than a JSON error — not the
+key, not the body, not the method. When it does not reach the edge, there is no answer at all, and that is
+a property of the path, not of the API.
 
 **What it does not establish.** Why a browser from this machine reaches the API while Node does not.
 Three explanations survive; see §6.1. Nothing here discriminates between them.
@@ -332,8 +352,9 @@ Three explanations survive; see §6.1. Nothing here discriminates between them.
 kind of bypass the challenge exists to prevent, and an integration that depends on defeating a security
 control is not an integration a judge should trust. The script records, exits with code `3`, and says so.
 
-Exit codes: `0` all three answered · `1` a call failed · `2` not configured · `3` challenged · `4` the
-report contained the key (it is deleted rather than written in that case).
+Exit codes: `0` all three answered · `1` a call failed with a response · `2` not configured · `3` challenged
+· `4` the report contained the key (nothing is written in that case) · `5` nothing reached the API ·
+`6` preflight only: a shell export is shadowing `.env.local`.
 
 #### Transport knobs that were checked
 

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { POST as analyzePost } from '@/app/api/analyze/route';
 import { POST as reviewPost } from '@/app/api/review/route';
+import { GET as statusGet } from '@/app/api/status/route';
 import { resetAdmission } from '@/lib/admission';
 import { LIMITS } from '@/lib/config';
 import { checkRateLimit, resetRateLimit } from '@/lib/ratelimit';
@@ -61,5 +62,14 @@ describe('HTTP guards on the public routes', () => {
     const response = await analyzePost(post('/api/analyze', JSON.stringify({ text: 'x', contentType: 'support_ticket' })));
     expect(response.status).toBe(429);
     expect(response.headers.get('Retry-After')).not.toBeNull();
+  });
+
+  it('publishes the limits and admits where the counters live, without the key', async () => {
+    const body = (await (await statusGet()).json()) as Record<string, unknown>;
+    const serialised = JSON.stringify(body);
+
+    expect(body.admission).toEqual({ store: 'in-memory', sharedAcrossInstances: false });
+    expect((body.limits as Record<string, number>).dailyScreens).toBe(LIMITS.dailyScreens);
+    expect(serialised).not.toMatch(/CLOCKED_API_KEY|bearer|api[_-]?key/i);
   });
 });

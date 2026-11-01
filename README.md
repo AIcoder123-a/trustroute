@@ -88,6 +88,8 @@ recapture it, is in `docs/SCREENSHOTS.md`.
 
 ## Quick start
 
+Node 22.9 or newer — the acceptance scripts load `.env.local` with `node --env-file-if-exists`.
+
 ```bash
 git clone <repository-url> trustroute
 cd trustroute
@@ -110,7 +112,8 @@ npm run dev
 | `npm run verify` | typecheck → lint → unit tests → build |
 | `npm test` | vitest: policy, redaction, highlighting, report, validation, rate limit, pipeline |
 | `npm run test:e2e` | Playwright, desktop and mobile |
-| `npm run verify:live` (alias `accept:live`) | **server-side acceptance**: three real calls through `clocked-sdk` from Node, no browser; records HTTP status, edge headers, shape, verdict, credits and data source to `.local/live-acceptance.json` |
+| `npm run verify:live` (alias `accept:live`) | **server-side acceptance**: three real calls through `clocked-sdk` from Node, no browser; records HTTP status, response type, per-call category (answered / challenge / auth / timeout), edge headers, shape, verdict, credits and data source to `.local/live-acceptance.json` |
+| `npm run accept:check` | credential preflight: which file the key came from, whether a shell export is shadowing it, and a `sha256:` fingerprint — sends nothing |
 | `npm run verify:live:browser` | the same three calls through Chromium, for edges that challenge non-browser clients; asserts afterwards that the key never reached the page |
 | `node scripts/collect-diagnostics.mjs` | 15 credential-free probes (Node, `curl` direct, `curl` via proxy) for a vendor report |
 | `node scripts/egress-compare.mjs` | five credential-free client configurations compared — Node, `curl`, Chromium with and without a proxy |
@@ -184,7 +187,7 @@ lib/copy             mode-aware wording: a sentence about Clocked can only exist
 
 | Layer | Count | Command |
 | --- | --- | --- |
-| Unit / integration (vitest) | 132 assertions in 17 files | `npm test` |
+| Unit / integration (vitest) | 133 assertions in 17 files | `npm test` |
 | Browser (Playwright, desktop + mobile) | 46 runs (23 scenarios × 2 viewports), 44 passing, 2 deliberate skips | `npm run test:e2e` |
 
 The browser suite walks the real flow: load a case → screen → read the decision → inspect the masked copy →
@@ -212,8 +215,11 @@ approve → export JSON → print sheet, at 1440×900 and 390×844. Details and 
   real field structures (recorded in `tests/fixtures/`, asserted by `tests/live-contract.test.ts`). That
   run went through a browser, because the edge answers non-browser clients with an HTML challenge
   (`403`, `cf-mitigated: challenge`) before authentication.
-  Re-measured on 2026-10-31 with `npm run accept:live` — the product's own path, Node + `clocked-sdk`, no
-  browser: all three calls returned `403 cf-mitigated: challenge` from `-SJC`, 0 credits, in ~0.7 s each.
+  Re-measured on 2026-11-01 with `npm run accept:live` — the product's own path, Node + `clocked-sdk`, no
+  browser, a rotated key: of three calls, one reached the edge and was challenged (`403`, `text/html`,
+  `-SEA`, 0 credits, 0.7 s), and two never connected at all (`UND_ERR_CONNECT_TIMEOUT` after 10.7 s, both
+  Cloudflare anycast addresses). The script reports those as different categories, because they are
+  different problems.
   *Why* a browser passes where Node does not has not been established; `docs/API_INTEGRATION.md` §6.1
   lists the observations and the three hypotheses that survive them. On this machine
   `CLOCKED_MODE=live` therefore reports `edge_interstitial` and holds the content with
@@ -225,13 +231,15 @@ approve → export JSON → print sheet, at 1440×900 and 390×844. Details and 
   It exists so the review flow can be exercised without a key, and it is never presented as Clocked
   output. There is no code path that falls back to it after a failed live call.
 - The simulated detector is a heuristic simulator, not a detector.
-- The audit trail and rate limiter are per-process and in-memory: correct for a demo, not for a fleet.
-- No authentication. A public deployment needs a gate in front of it.
+- The audit trail and the abuse controls are per-process and in-memory. On one instance that is exact; on a
+  host that runs several, the daily ceiling becomes `instances × DAILY_SCREENS` and a cold start resets it
+  (`docs/SECURITY_NOTES.md` §12). The free fix — a Turnstile gate plus a shared counter — is specified in
+  `docs/DEPLOYMENT.md` §5.2 but not implemented; until then the rule is one instance and
+  `DAILY_SCREENS ≤ 40`.
+- The same-origin check stops other *pages*, not other *clients*: it is a browser rule, never a limiter.
+- No authentication. A public deployment needs a gate in front of it, or a very small daily budget.
 - Content is capped (16k prose / 32k script) and rejected rather than truncated, so a screen always covers
   the whole input.
-- Abuse controls are per-process: a per-IP window, a per-caller concurrency slot and a whole-deployment
-  daily ceiling. A multi-instance deployment multiplies the first two; put a shared limiter at the edge.
-- No authentication. A public deployment needs a gate in front of it or a very small daily budget.
 
 ## Documentation
 
