@@ -109,25 +109,85 @@ Until step 1 exists, leaving `TURNSTILE_ENABLED=false` is the only correct setti
 
 Measured on 2026-11-01 from two different networks: `curl` and Node are answered with
 `403 cf-mitigated: challenge` while Chromium from the same IP gets `200`. The refusal follows the **client**,
-not the address, so a datacenter egress is unlikely to change it. The only honest sequence is:
+not the address, so a datacenter egress is unlikely to change it. Nothing in this repository can settle that
+question — only a call from a cloud egress can — so the demo starts simulated and the deployment says so.
 
-1. deploy with `CLOCKED_MODE=mock`;
-2. run `npm run accept:live` from a machine that is not this one (a GitHub runner, or the deployed instance
-   itself if a route ever proxies it — this app has none by design);
-3. switch to `live` only if step 2 answers `200` with a real verdict. Otherwise the demo stays simulated and
-   says so, everywhere, including the export.
+### 7.1 What cannot be used for the test
+
+| Idea | Why it does not work |
+| --- | --- |
+| Render **Shell** | Free instances have **no shell and no SSH** (Render's own comparison tables say so). Paid instances only. |
+| Render **one-off job** | Not available on the free compute plan; one-off jobs are a paid feature. |
+| A **probe route** in this app (`/api/probe`) | A public endpoint that spends credits on demand is the exact thing §4–5 exist to prevent. Not added, and it should not be. |
+| A **public** repo or a public demo just to test | Publishes the project before the owner has decided to, and answers nothing that a private runner does not. |
+
+### 7.2 The cheapest real answer: a private repository and the committed workflow
+
+`.github/workflows/live-check.yml` already exists and does exactly one thing: three real calls through
+`clocked-sdk` from a stock `ubuntu-latest` runner, no deployment, no browser, no public URL. A **private**
+GitHub repository is enough — private repositories get 2,000 Actions minutes a month on the free plan, and
+this job takes about two. Nothing about the project becomes public, and no service is purchased.
+
+Owner steps (about five minutes, all inside GitHub):
+
+1. **Create the repository as private.** `github.com/new` → name `trustroute` → **Private** → do not add a
+   README. Copy the URL.
+2. **Push this local repository to it** (the only outward-facing command in the whole plan):
+   `git remote add origin https://github.com/<account>/trustroute.git` then `git push -u origin main`
+3. **Add the key as a repository secret**: Settings → Secrets and variables → Actions → *New repository
+   secret* → name `CLOCKED_API_KEY`, value = the rotated key. The workflow passes it as an environment
+   variable to a script that never prints it.
+4. **Run it**: Actions → *live-check* → *Run workflow*. Two minutes.
+5. **Read the artifact**: `live-acceptance.json` (retained 7 days) has, per endpoint, the HTTP status,
+   latency, response type, classification, credits, `cf-ray`/`cf-mitigated` and the verdict.
+
+Reading the result — the same table as `DEPLOYMENT.md` §3:
+
+| Artifact says | Meaning | Next |
+| --- | --- | --- |
+| three `answered` rows, `200` | a datacenter egress reaches the API | Render can run `CLOCKED_MODE=live`; deploy, then confirm with one real screen (§7.3 step 3) |
+| `edge_challenge` again | the rule is not about a particular network — it applies to non-browser clients generally | keep the public demo simulated; the provider escalation (`API_INTEGRATION.md` §6.4) is the only path |
+| `timeout` / `connection_error` | that runner could not open a connection | re-run once; if it repeats, the runner's egress is filtered and the result says nothing about Render |
+| `auth_failed` / `forbidden` | the key, not the edge | fix the secret, do not touch the network |
+
+Two things this test is good for beyond its verdict: it proves the **key works from a machine that is not
+this one** (a rotation that broke something shows up here), and it produces a dated artifact that can be
+attached to the escalation email.
+
+### 7.3 If it passes: the in-service proof
+
+A workflow passing does not prove *this service* passes — different host, different egress. The only
+in-service proof is a real screen, and it needs the live mode:
+
+1. Deploy with `CLOCKED_MODE=mock` and confirm §8 step 5.
+2. Run `node scripts/deploy-preflight.mjs` with the **deployment's** values (locally, in a shell): it must
+   print `READY`, or `READY WITH CAVEATS` with the caveats accepted on purpose.
+3. Switch `CLOCKED_MODE=live` (and `DAILY_SCREENS=40`), redeploy, open the site in a private window and
+   screen one one-click example. Three outcomes, all informative:
+   - **PASS/REVIEW/BLOCK with real numbers** → the deployment works; keep it.
+   - **`Screening unavailable — manual review required`** → the service was challenged too. Switch back to
+     `mock` immediately; the product already refuses to fake a verdict.
+   - **`503 not_configured`** → the key is missing or malformed on the host; `deploy-preflight` names which.
+4. Spend at most one screen on this. It is 12–19 credits; the point is the `mode` and the stage statuses, not
+   a verdict.
 
 ## 8. Deploy steps (owner, not the assistant)
 
+Render deploys from a **private** repository as well as a public one, so the repository from §7.2 can serve
+both the connectivity test and the deployment. Nothing has to be published to get either.
+
 1. Create the repository from this one and confirm the secret scan (`RELEASE_CHECKLIST.md` §2).
-2. Render → **New → Blueprint**, select the repo; `render.yaml` fills the form.
-3. Paste the secrets when prompted (`CLOCKED_API_KEY` at minimum; Redis and Turnstile later).
-4. Wait for the build; read the log for the "no open ports" and OOM failure modes in §1–2.
-5. `curl -s https://<name>.onrender.com/api/status` — expect `mode: "mock"`, `store`, `turnstile: "off"`,
+2. Run `npm run deploy:preflight` with the values the service will have. It refuses a live deployment whose
+   daily counter lives in process memory, a `NEXT_PUBLIC_*` variable, a key that kept its quotes, and a
+   human check that is on without a secret.
+3. Render → **New → Blueprint**, select the repo; `render.yaml` fills the form.
+4. Paste the secrets when prompted (`CLOCKED_API_KEY` at minimum; Redis and Turnstile later).
+5. Wait for the build; read the log for the "no open ports" and OOM failure modes in §1–2.
+6. `curl -s https://<name>.onrender.com/api/status` — expect `mode: "mock"`, `store`, `turnstile: "off"`,
    `trustProxy: true`.
-6. Open the site in a private window: the idle screen, a one-click example, the evidence panel, the export.
-7. Re-run step 5 after the service has slept for 15 minutes — this is the cold-start path a judge will hit.
-8. Only then decide §7.
+7. Open the site in a private window: the idle screen, a one-click example, the evidence panel, the export.
+8. Re-run step 6 after the service has slept for 15 minutes — this is the cold-start path a judge will hit.
+9. Only then decide §7.3.
 
 ## 9. Rollback
 

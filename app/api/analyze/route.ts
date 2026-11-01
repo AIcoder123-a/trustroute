@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
 
 import { admit, release } from '@/lib/admission';
+import { readBoundedBody } from '@/lib/body';
 import { ConfigurationError, LIMITS, hasApiKey, turnstileState } from '@/lib/config';
 import { checkOrigin } from '@/lib/origin';
 import { analyze } from '@/lib/pipeline';
+import { consumeQuota } from '@/lib/quota';
 import { callerIdentity } from '@/lib/ratelimit';
 import { verifyTurnstile } from '@/lib/turnstile';
 import { validateAnalyzeInput } from '@/lib/validate';
@@ -12,25 +14,27 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
-/** Never forwarded: the browser only needs to know what to do next. */
-function rateLimited(reason: string, retryAfterSeconds: number, dailyRemaining: number) {
+/**
+ * Never forwarded: the browser only needs to know what to do next.
+ *
+ * `dailyRemaining` is null when the day's counter was never read — a window or
+ * concurrency refusal happens before the quota is charged, and inventing a
+ * number there would be worse than omitting the header.
+ */
+function rateLimited(reason: string, retryAfterSeconds: number, dailyRemaining: number | null) {
   const message =
     reason === 'daily_budget'
       ? 'This demo has used its screening allowance for today. Nothing was screened; the workflow is still visible with a demo case loaded.'
       : reason === 'concurrency'
         ? 'Another screening from this browser is still running. Wait for it to finish — nothing was screened twice.'
         : `Too many screening requests. Try again in ${retryAfterSeconds}s.`;
-  return NextResponse.json(
-    { error: 'rate_limited', message },
-    {
-      status: 429,
-      headers: {
-        'Retry-After': String(retryAfterSeconds),
-        'Cache-Control': 'no-store',
-        'X-Daily-Remaining': String(dailyRemaining),
-      },
-    },
-  );
+  const headers: Record<string, string> = {
+    'Retry-After': String(retryAfterSeconds),
+    'Cache-Control': 'no-store',
+  };
+  if (dailyRemaining !== null) headers['X-Daily-Remaining'] = String(dailyRemaining);
+
+  return NextResponse.json({ error: 'rate_limited', message }, { status: 429, headers });
 }
 
 /**
@@ -103,42 +107,33 @@ export async function POST(request: Request) {
   const challenge = await turnstileGate(request, identity.ip);
   if (challenge) return challenge;
 
+  // Window and concurrency: cheap, in-process, and the reason a request gets
+  // refused before anything is read or parsed.
   const admission = await admit(identity.key);
   if (!admission.allowed) {
-    if (admission.reason === 'quota_unavailable') {
-      return NextResponse.json(
-        {
-          error: 'quota_unavailable',
-          message:
-            'The screening budget could not be checked, so nothing was screened. This is a deliberate refusal: an unknown budget is treated as no budget.',
-        },
-        { status: 503, headers: { 'Cache-Control': 'no-store', 'Retry-After': '30' } },
-      );
-    }
-    return rateLimited(admission.reason ?? 'window', admission.retryAfterSeconds, admission.dailyRemaining);
+    return rateLimited(admission.reason ?? 'window', admission.retryAfterSeconds, null);
   }
   const key = identity.key;
 
   try {
-    let raw: string;
-    try {
-      raw = await request.text();
-    } catch {
+    // Bounded, so a chunked upload with no `content-length` cannot fill memory.
+    const read = await readBoundedBody(request);
+    if (!read.ok) {
+      if (read.reason === 'too_large') {
+        return NextResponse.json(
+          { error: 'payload_too_large', message: 'Request body is larger than this demo accepts.' },
+          { status: 413, headers: { 'Cache-Control': 'no-store' } },
+        );
+      }
       return NextResponse.json(
         { error: 'unreadable_body', message: 'Request body could not be read.' },
         { status: 400, headers: { 'Cache-Control': 'no-store' } },
       );
     }
-    if (raw.length > LIMITS.maxBodyBytes) {
-      return NextResponse.json(
-        { error: 'payload_too_large', message: 'Request body is larger than this demo accepts.' },
-        { status: 413, headers: { 'Cache-Control': 'no-store' } },
-      );
-    }
 
     let body: unknown;
     try {
-      body = JSON.parse(raw);
+      body = JSON.parse(read.text);
     } catch {
       return NextResponse.json(
         { error: 'invalid_json', message: 'Request body must be valid JSON.' },
@@ -154,6 +149,25 @@ export async function POST(request: Request) {
       );
     }
 
+    // The day's ceiling is charged here, not earlier: only a request that is
+    // actually going to reach a detector spends allowance the whole deployment
+    // shares. A refusal at this point means the budget is gone or unknowable,
+    // and either way nothing is sent upstream.
+    const quota = await consumeQuota();
+    if (!quota.allowed) {
+      if (quota.reason === 'store_unavailable') {
+        return NextResponse.json(
+          {
+            error: 'quota_unavailable',
+            message:
+              'The screening budget could not be checked, so nothing was screened. This is a deliberate refusal: an unknown budget is treated as no budget.',
+          },
+          { status: 503, headers: { 'Cache-Control': 'no-store', 'Retry-After': '30' } },
+        );
+      }
+      return rateLimited('daily_budget', quota.retryAfterSeconds, quota.remaining);
+    }
+
     const result = await analyze(validated.value);
     return NextResponse.json(result, {
       status: 200,
@@ -161,7 +175,7 @@ export async function POST(request: Request) {
         'Cache-Control': 'no-store',
         'X-RateLimit-Limit': String(admission.limit),
         'X-RateLimit-Remaining': String(admission.remaining),
-        'X-Daily-Remaining': String(admission.dailyRemaining),
+        'X-Daily-Remaining': String(quota.remaining),
       },
     });
   } catch (error) {

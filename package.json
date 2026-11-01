@@ -16,7 +16,8 @@
     "verify:live:browser": "node scripts/live-verify.mjs",
     "verify": "npm run typecheck && npm run lint && npm run test && npm run build",
     "accept:live": "node --env-file-if-exists=.env.local scripts/live-acceptance.mjs",
-    "accept:check": "node --env-file-if-exists=.env.local scripts/live-acceptance.mjs --preflight"
+    "accept:check": "node --env-file-if-exists=.env.local scripts/live-acceptance.mjs --preflight",
+    "deploy:preflight": "node --env-file-if-exists=.env.local scripts/deploy-preflight.mjs"
   },
   "dependencies": {
     "clocked-sdk": "0.7.0",

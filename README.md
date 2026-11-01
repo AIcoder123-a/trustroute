@@ -114,6 +114,7 @@ npm run dev
 | `npm run test:e2e` | Playwright, desktop and mobile |
 | `npm run verify:live` (alias `accept:live`) | **server-side acceptance**: three real calls through `clocked-sdk` from Node, no browser; records HTTP status, response type, per-call category (answered / challenge / auth / timeout), edge headers, shape, verdict, credits and data source to `.local/live-acceptance.json` |
 | `npm run accept:check` | credential preflight: which file the key came from, whether a shell export is shadowing it, and a `sha256:` fingerprint — sends nothing |
+| `npm run deploy:preflight` | audit of the environment a host will run with: fails on a `NEXT_PUBLIC_*` variable, a quoted key, a live deployment with an in-process daily ceiling, a human check on without a secret, or a live ceiling above 60 screens/day. Prints the daily spend in credits, never the key |
 | `npm run verify:live:browser` | the same three calls through Chromium, for edges that challenge non-browser clients; asserts afterwards that the key never reached the page |
 | `node scripts/collect-diagnostics.mjs` | 15 credential-free probes (Node, `curl` direct, `curl` via proxy) for a vendor report |
 | `node scripts/egress-compare.mjs` | five credential-free client configurations compared — Node, `curl`, Chromium with and without a proxy |
@@ -189,7 +190,7 @@ lib/copy             mode-aware wording: a sentence about Clocked can only exist
 
 | Layer | Count | Command |
 | --- | --- | --- |
-| Unit / integration (vitest) | 153 assertions in 20 files | `npm test` |
+| Unit / integration (vitest) | 167 assertions in 22 files | `npm test` |
 | Browser (Playwright, desktop + mobile) | 46 runs (23 scenarios × 2 viewports), 44 passing, 2 deliberate skips | `npm run test:e2e` |
 
 The browser suite walks the real flow: load a case → screen → read the decision → inspect the masked copy →
@@ -257,7 +258,7 @@ approve → export JSON → print sheet, at 1440×900 and 390×844. Details and 
 | `docs/TEST_REPORT.md` | test matrix, results, evidence |
 | `docs/SECURITY_NOTES.md` | threat model, data retention, deliberate weaknesses |
 | `docs/DEPLOYMENT.md` | what a deploy needs, why a cloud host may hit the same 403, and the two cheap ways to find out before deploying |
-| `docs/RENDER.md` | the chosen host: free-plan limits read from Render's docs, the blueprint, the cold start, and the rule for switching to live |
+| `docs/RENDER.md` | the chosen host: free-plan limits read from Render's docs, the blueprint, the cold start, the minimal cloud connectivity test that needs no deployment (a *private* repository and its Actions workflow), and the rule for switching to live |
 | `docs/RELEASE_CHECKLIST.md` | secret scan, what ships, and the ordered launch runbook |
 | `docs/SUBMISSION_DRAFT.md` | entry-form copy and video script |
 | `AGENTS.md` | rules for continuing the work |

@@ -42,7 +42,7 @@ read than MIT and has no legal review behind it.
 ## 1. Pre-flight on the machine
 
 ```bash
-npm run verify                  # typecheck, lint, 153 assertions, production build
+npm run verify                  # typecheck, lint, 167 assertions, production build
 npx playwright test             # 46 runs: 44 passing, 2 deliberate skips
 npm run accept:live             # live status, shape, verdict, data source — or the refusal
 ```
@@ -66,6 +66,12 @@ git log -p --all -- . ':!package-lock.json' | grep -cF -- "$PREFIX"
 
 # .env.local must never have been tracked
 git log --all --oneline -- .env.local .env | head
+
+# and the built artefact must not contain the value either
+npm run build && grep -rlF -- "$(grep '^CLOCKED_API_KEY=' .env.local | cut -d= -f2-)" .next || echo "bundle: clean"
+
+# what the deployment environment would do, before the host sees it
+npm run deploy:preflight
 ```
 
 - [ ] No hit in the working tree, no hit in history, `.env.local` never tracked
@@ -73,6 +79,8 @@ git log --all --oneline -- .env.local .env | head
       `.workbuddy/`
 - [ ] `.env.example` carries empty values only, and no real hostname or account id
 - [ ] `render.yaml` holds no secret: every credential is `sync: false` and is typed into the dashboard
+- [ ] `npm run deploy:preflight` says READY, or the caveats it lists have been read and accepted
+- [ ] The build output is clean: no match for the key value anywhere under `.next`
 - [ ] `README.md`, `docs/*.md` and every screenshot are free of keys, tokens, emails and personal data
 - [ ] The key in `.env.local` is the one that stays local; the deployed value is set in the host's
       environment, **never** as `NEXT_PUBLIC_*` (that prefix would inline it into the browser bundle)
@@ -162,7 +170,7 @@ it proves; a step that is skipped is a claim that has to be softened later.
 | 2 | Check the credential | `npm run accept:check` | the key comes from `.env.local`, is the rotated one, and is not a stale shell export |
 | 3 | Measure the server path | `npm run accept:live` (hotspot or CI, `DEPLOYMENT.md` §3) | whether a non-browser client can reach the API at all |
 | 4 | Decide the tier | `DEPLOYMENT.md` §7 A/B/C | what the entry is allowed to claim |
-| 5 | Secret scan | §2 of this file | the repo can be made public |
+| 5 | Secret scan and deployment audit | §2 of this file, plus `npm run deploy:preflight` | the repo can be made public, and the host's environment cannot overspend or leak |
 | 6 | Create the public repository | owner | the rules' repository requirement |
 | 7 | Deploy with `CLOCKED_MODE=mock` | Render: build `npm ci && npm run build`, start `npx next start -p $PORT` | the build runs on the host, and a wrong turn costs nothing |
 | 8 | Verify from outside | §5 of this file (`/api/status`, headers, cross-origin 403) | the deployed instance behaves like the local one |

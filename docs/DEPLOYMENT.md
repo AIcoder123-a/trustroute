@@ -40,24 +40,22 @@ and no amount of reading documentation resolves that. It needs one measurement f
 
 ## 3. The cheap experiment, before any deployment
 
-Two ways to get that measurement without deploying anything. Either is enough.
+Two local networks have already been measured (2026-11-01, `API_INTEGRATION.md` §6.3): on both, Node and
+`curl` are answered with `403 cf-mitigated: challenge` while Chromium from the same public address gets
+`200`. Repeating that locally now adds nothing — the open question is what a **cloud** egress gets, and only
+a call from one can answer it.
 
-**Option A — another network, same machine.** Run from a phone hotspot or an office network:
+**Option A — a private repository and its GitHub Actions workflow (no deployment).**
+`.github/workflows/live-check.yml` runs `npm run accept:live` on a stock `ubuntu-latest` runner: three real
+calls, no browser, no public URL, about two minutes, no service purchased. A private repository is enough
+(2,000 Actions minutes a month on the free plan; this job uses about two). Owner steps and how to read the
+artifact: `docs/RENDER.md` §7.2.
 
-```bash
-npm run accept:check      # credential preflight: which file, which fingerprint, sends nothing
-npm run accept:live       # server-side SDK calls; the key comes from .env.local
-```
+**Option B — deploy, then screen once.** More effort, and it needs the key in a dashboard, but it tests the
+host that will actually serve judges. Sequence and outcomes: `docs/RENDER.md` §7.3.
 
-If it answers `200`, the block was this network's egress, and any host with a clean egress will work.
-
-**Option B — a CI runner.** `.github/workflows/live-check.yml` is committed and does exactly that: a
-stock `ubuntu-latest` runner (Node 22, datacenter egress) runs `npm run accept:live` with
-`CLOCKED_API_KEY` from repository secrets. It costs nothing, takes about two minutes, and answers the
-question "will a cloud egress pass?" more directly than any hosting comparison table.
-
-Both options need the owner: A needs a network, B needs a repository and a secret. **Neither was run by
-the assistant**, because both require credentials or an external account.
+Both need the owner, because both require an account and a credential. **Neither has been run by the
+assistant.** Nothing in this repository can substitute for either.
 
 Reading the result — the script labels each call, so the four outcomes are not confused with each other:
 
@@ -68,14 +66,14 @@ Reading the result — the script labels each call, so the four outcomes are not
 | `auth_failed` | 401 | the credential was rejected | check or rotate the key — this one *is* about the key |
 | `timeout` / `connection_error` | none | nothing reached the API | the network path (tethering, DNS, captive portal, proxy) |
 
-Reading the result across the two networks:
+Reading the result:
 
 | Result | Meaning | Next step |
 | --- | --- | --- |
-| `200` from CI or hotspot | the challenge was local; the server path works elsewhere | deploy to any Node host, live mode, no design change |
-| `403 challenge` from both | the rule is not about this network | ask the provider to exempt `/clocked/*` (see `.local/support/SUPPORT_EMAIL.md`) before deploying |
-| `403` from CI but `200` from hotspot | the rule penalises datacenter egress | deploy behind a residential/office egress you control, or keep the demo simulated |
-| `timeout` from one network only | that network's path is broken, not the API | retry from the host you intend to deploy to, and report timeouts separately from 403s |
+| `200` from the runner | a datacenter egress reaches the API | deploy to Render, live mode, then confirm with one real screen (`RENDER.md` §7.3) |
+| `edge_challenge` from the runner too | the rule is not about any one network; it discriminates on the client | keep the public demo simulated and escalate (`API_INTEGRATION.md` §6.4) |
+| `timeout` from the runner only | the runner's egress is filtered, or the run was unlucky | re-run once; the result then says nothing about Render |
+| `answered` from the runner but `challenge` from Render | host-specific filtering | deploy simulated, or keep that host for a simulated-only demo |
 
 ## 4. Free hosts, compared against what this app actually needs
 
@@ -290,7 +288,7 @@ is the design — a bounded loss of one day's budget, not an unbounded one.
 | Per-caller window, per-caller concurrency | **implemented, in process memory** (exact on Render's single instance) | `lib/ratelimit.ts`, `lib/admission.ts` |
 | Daily ceiling | **implemented**, memory by default, **Redis when configured** | `lib/quota.ts` |
 | Turnstile verification + replay guard | **implemented server-side, off by default** — the browser widget is not shipped, so enabling it without one would refuse every screening | `lib/turnstile.ts`, `docs/RENDER.md` §5 |
-| Same-origin refusal, body cap, input caps, generic errors | **implemented** | `lib/origin.ts`, `app/api/analyze/route.ts` |
+| Same-origin refusal, body cap, input caps, generic errors | **implemented** | `lib/origin.ts`, `lib/body.ts`, `app/api/analyze/route.ts` |
 | Caller identity that does not trust a client-written header | **implemented** — `TRUST_PROXY` decides whether `x-forwarded-for` is believed; otherwise claimed addresses fold into 64 buckets | `lib/ratelimit.ts` |
 | Shared counter (Upstash) | **implemented, unconfigured** — needs the two env vars | `lib/quota.ts` |
 
@@ -298,17 +296,33 @@ Until Redis is configured, the honest deployment rule stands: **run exactly one 
 tier is always one), keep `DAILY_SCREENS` at 40 or below, and watch `X-Daily-Remaining`. On a host that
 scales out, the in-memory ceiling is a speed bump, not a limit.
 
+Two details that keep the spend where it was planned:
+
+- **The day is charged per screening, not per request.** `admit()` answers about the window and the
+  concurrency slot only; `consumeQuota()` runs after the body has parsed and validated. A paste that is too
+  long, a malformed body or an empty field costs nothing from the shared allowance — otherwise a visitor
+  experimenting with the input would spend a judge's budget.
+- **The body is read with a ceiling.** `lib/body.ts` stops at 512 KB and cancels the stream, so a chunked
+  upload without `content-length` cannot push a 512 MB instance into swap. The header check in front of it
+  is the cheap path for honest clients, not the control.
+
 ## 6. Pre-flight checklist (for whenever the owner authorises it)
 
 1. `npm run verify` — typecheck, lint, unit tests, production build.
 2. `npx playwright test` — desktop and mobile flows.
 3. `npm run accept:check` — confirms the key is loaded from `.env.local`, prints its fingerprint, and sends
    nothing. Then `npm run accept:live` for the real three calls (§3).
-4. Confirm the deployment has **no** `NEXT_PUBLIC_*` variable, and that `/api/status` reports the expected
-   `mode` without echoing the key.
-5. Set `CLOCKED_MODE`, `RATE_LIMIT_REQUESTS` and `DAILY_SCREENS` as in §5, and confirm the values appear in
+4. Run `npm run deploy:preflight` with the values the host will have. It fails on a `NEXT_PUBLIC_*`
+   variable, a key that kept its quotes or whitespace, a live deployment whose daily counter is in process
+   memory, a human check enabled without a secret, and a live ceiling above 60 screens/day. It prints the
+   daily spend in credits and never the key.
+5. Confirm the built client bundle holds no credential. After `npm run build`:
+   `grep -rlF "$(grep '^CLOCKED_API_KEY=' .env.local | cut -d= -f2-)" .next` prints nothing. (Checked on
+   2026-11-01: no match for the value; the only occurrence of the *name* is the mock banner's instruction
+   text.)
+6. Set `CLOCKED_MODE`, `RATE_LIMIT_REQUESTS` and `DAILY_SCREENS` as in §5, and confirm the values appear in
    `/api/status`. On Render, also set the start command to `npx next start -p $PORT`.
-6. After deploy, check the **deployed URL**, not localhost:
+7. After deploy, check the **deployed URL**, not localhost:
 
    ```bash
    curl -s https://<deployment>/api/status
@@ -322,7 +336,6 @@ scales out, the in-memory ceiling is a speed bump, not a limit.
    the API; only a screen is.
 8. Time the first request after idle, and write the number down (`cold start: __ s`). If it is over a
    minute, say so next to the demo link instead of letting a judge discover it.
-
 ## 7. Delivery strategy: three tiers, and what each one is worth
 
 | Tier | What runs live | What the submission can claim |

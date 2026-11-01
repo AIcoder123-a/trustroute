@@ -52,34 +52,39 @@ that touches a secret, a third-party API or a decision lives on the server.
    origin must match the app or the host the request arrived on (`x-forwarded-host`), or appear in
    `ALLOWED_ORIGINS` for a proxy setup. Refusal is `403 cross_origin_blocked` with **no** CORS header —
    the endpoint is not a public API.
-2. **Body cap** (`LIMITS.maxBodyBytes`, 512 KB): checked against `content-length` before reading, and again
-   against the bytes actually read, because a chunked body declares nothing. `413` before parsing.
+2. **Body cap** (`lib/body.ts`, 512 KB): `content-length` is checked before reading — the cheap path for an
+   honest client — and the stream is then read with the same ceiling, because a chunked body declares
+   nothing. The reader cancels the stream at the first byte over the limit, so an oversized upload is never
+   buffered and never parsed. `413` before parsing.
 3. **Human check** (`lib/turnstile.ts`, off by default): when enabled, the `x-turnstile-token` header is
    claimed once (SHA-256, `SET NX` on Redis or a bounded map) and verified at Cloudflare's `siteverify`
    **before any counter moves**. A missing, replayed or rejected token is `403 challenge_required`; an
    unreachable verifier is `503`, because "we could not check" must not become "we assume it was fine".
    Without a configured site key the step is a pass-through and `/api/status` says `turnstile: "off"`.
-4. **Admission** (`lib/admission.ts`): three layers, in this order — a per-caller fixed window (20 per
-   5 minutes), a per-caller concurrency slot (2 in flight), and a whole-deployment daily ceiling
-   (60 live / 240 simulated, `lib/quota.ts`: memory, or one atomic Redis `EVAL` when configured, and
-   **fail-closed** when Redis cannot answer). The quota is consumed last, so a request refused earlier does
-   not spend the allowance for everyone else. Each refusal is `429` with a different message and
-   `Retry-After`, because "slow down", "you already have one running", "the demo is out of budget for today"
-   and "the budget cannot be checked" are different instructions to a user.
+4. **Admission** (`lib/admission.ts`): two in-process layers — a per-caller fixed window (20 per 5 minutes)
+   and a per-caller concurrency slot (2 in flight). Cheap, and the reason a request can be refused before
+   anything is read.
 5. **Validate** (`lib/validate.ts`): body is JSON, `text` non-empty, no null bytes, length under the
    content-type limit (16k prose / 32k script — both well under the 60k/200k API caps), `instructions`
    under 2k, unknown fields dropped.
-6. **Detect** (`lib/pipeline.ts`): Guard and Protect always run in parallel; Inspect runs only for
+6. **Charge the day** (`lib/quota.ts`): the whole-deployment ceiling (60 live / 240 simulated — memory, or
+   one atomic Redis `EVAL` when configured, **fail-closed** when Redis cannot answer). Deliberately *after*
+   validation: a paste that is too long, a malformed body or a missing field must not spend allowance that
+   a real screening needs. Refusals are `429 daily_budget` with `Retry-After` to UTC midnight, or
+   `503 quota_unavailable` — "out of budget" and "the budget cannot be checked" are different instructions.
+7. **Detect** (`lib/pipeline.ts`): Guard and Protect always run in parallel; Inspect runs only for
    `contentType === 'script'` and is otherwise reported as `skipped` with a reason.
-7. **Mask** (`lib/redact.ts`): a masked copy is rebuilt from the Protect spans, independently of
+8. **Mask** (`lib/redact.ts`): a masked copy is rebuilt from the Protect spans, independently of
    whatever text the API returned.
-8. **Decide** (`lib/policy.ts`): a pure function over the three stage results plus the redaction
+9. **Decide** (`lib/policy.ts`): a pure function over the three stage results plus the redaction
    report. No I/O, no randomness, no model.
-9. **Audit** (`lib/audit.ts`): a content-free record — SHA-256 prefix, length, decision, stage statuses,
-   entity count, duration.
-10. **Respond** with an `AnalyzeResponse` that carries, for every stage, its `mode`, `status`,
+10. **Audit** (`lib/audit.ts`): a content-free record — SHA-256 prefix, length, decision, stage statuses,
+    entity count, duration.
+11. **Respond** with an `AnalyzeResponse` that carries, for every stage, its `mode`, `status`,
     `latencyMs`, `attempts`, `credits` and endpoint path, plus `X-RateLimit-*` and `X-Daily-Remaining`
-    so the client can say how much budget is left without asking a second endpoint.
+    so the client can say how much budget is left without asking a second endpoint. A window or
+    concurrency refusal omits `X-Daily-Remaining`: the day was never read, and a guessed number is worse
+    than no number.
 
 The caller bucket comes from `callerIdentity()`: `x-forwarded-for` is believed only when `TRUST_PROXY=1`
 (and then only its **last** hop, the one a proxy appended); otherwise a claimed address is folded into 64

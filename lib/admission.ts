@@ -15,6 +15,12 @@
  *      Per-caller limits do nothing against a hundred callers, and this is the
  *      only ceiling that bounds what the account can be charged in a day.
  *
+ * (1)–(3) run here, in `admit()`. (4) does **not**: the route calls
+ * `consumeQuota()` only after the body has parsed and validated, so a request
+ * that never reaches a detector — a typo, a paste that is too long, a malformed
+ * body — does not spend a day of allowance that a real screening needs. The
+ * counter that guards money should be charged for screenings, not for attempts.
+ *
  * Only (2) and (3) stay in process memory: a shared counter per window is not
  * worth a network round trip, and a concurrency slot is meaningful per instance
  * anyway. (4) is the one that guards money, so it is the one that moves to Redis
@@ -25,10 +31,9 @@
  */
 
 import { LIMITS } from './config';
-import { consumeQuota, type QuotaStore } from './quota';
 import { checkRateLimit } from './ratelimit';
 
-export type AdmissionReason = 'window' | 'concurrency' | 'daily_budget' | 'quota_unavailable';
+export type AdmissionReason = 'window' | 'concurrency';
 
 export interface AdmissionResult {
   allowed: boolean;
@@ -37,31 +42,19 @@ export interface AdmissionResult {
   /** Requests left in this caller's window. */
   remaining: number;
   limit: number;
-  /** Screens left in the deployment's day. Never negative. */
-  dailyRemaining: number;
-  /** Where the daily counter lives — surfaced so an operator cannot misread it. */
-  quotaStore: QuotaStore;
 }
 
 const inFlight = new Map<string, number>();
 
 /**
- * Reserves one screening. A successful reservation must be paired with
+ * Reserves one screening slot. A successful reservation must be paired with
  * `release()` in a `finally` block, or the caller's concurrency slot leaks.
- *
- * The daily quota is consumed **last**, so a request refused for concurrency or
- * for its window does not spend the deployment's allowance for everybody else.
  */
-export async function admit(
-  key: string,
-  now = Date.now(),
-  options: { fetchImpl?: typeof fetch } = {},
-): Promise<AdmissionResult> {
+export async function admit(key: string, now = Date.now()): Promise<AdmissionResult> {
   const running = inFlight.get(key) ?? 0;
   const base = {
     remaining: 0,
     limit: LIMITS.requestsPerWindow,
-    dailyRemaining: 0,
   };
 
   if (running >= LIMITS.concurrentPerCaller) {
@@ -70,7 +63,6 @@ export async function admit(
       allowed: false,
       reason: 'concurrency',
       retryAfterSeconds: 3,
-      quotaStore: 'memory',
     };
   }
 
@@ -81,20 +73,6 @@ export async function admit(
       allowed: false,
       reason: 'window',
       retryAfterSeconds: window.retryAfterSeconds,
-      quotaStore: 'memory',
-    };
-  }
-
-  const quota = await consumeQuota(now, { fetchImpl: options.fetchImpl });
-  if (!quota.allowed) {
-    return {
-      allowed: false,
-      reason: quota.reason === 'store_unavailable' ? 'quota_unavailable' : 'daily_budget',
-      retryAfterSeconds: quota.retryAfterSeconds,
-      remaining: window.remaining,
-      limit: window.limit,
-      dailyRemaining: quota.remaining,
-      quotaStore: quota.store,
     };
   }
 
@@ -106,8 +84,6 @@ export async function admit(
     retryAfterSeconds: 0,
     remaining: window.remaining,
     limit: window.limit,
-    dailyRemaining: quota.remaining,
-    quotaStore: quota.store,
   };
 }
 

@@ -29,8 +29,8 @@ vitest 5.0.5, re-verified with the full suite.
 ### 2.1 Unit and integration (vitest)
 
 ```
-Test Files  17 passed (17)
-     Tests  153 passed (153)
+Test Files  22 passed (22)
+     Tests  167 passed (167)
 ```
 
 | File | Assertions | Covers |
@@ -49,11 +49,13 @@ Test Files  17 passed (17)
 | `tests/harness-hygiene.test.ts` | 7 | the verification harness attaches the credential out of band and never inside page JavaScript; no `NEXT_PUBLIC_*` anywhere; the key is read in exactly two server-only modules |
 | `tests/copy-consistency.test.ts` | 8 | no mock label claims Clocked as its source; every mock source label reads as simulated; the policy engine attributes a detection to the API only in live mode; a mock report is not "compared with Clocked"; the claim cannot be reintroduced as a literal in `components/` |
 | `tests/origin.test.ts` | 6 | no `Origin` accepted, same host accepted, `x-forwarded-host` accepted, another site refused, `Origin: null` refused, an unparsable origin refused rather than trusted |
-| `tests/admission.test.ts` | 7 | per-caller window, concurrency slot and release, one caller cannot consume another's slot, a request refused for concurrency does not spend the day's budget, whole-deployment daily ceiling, reset at UTC midnight |
-| `tests/http-guards.test.ts` | 7 | cross-origin POST → 403 on both routes, oversized body → 413 before parsing, malformed JSON → 400 not 500, missing text → 400, exhausted window → 429 with `Retry-After`, `/api/status` publishes the limits and where the counters live without any credential-shaped string |
+| `tests/admission.test.ts` | 6 | per-caller window and its remaining count, concurrency slot and release, one caller cannot consume another's slot, a window refusal reported separately from a concurrency one, and the module answering about window and concurrency only — the day's ceiling is charged by the route, after validation |
+| `tests/http-guards.test.ts` | 9 | cross-origin POST → 403 on both routes, oversized body → 413 before parsing, an oversized *streamed* body with no `content-length` → 413 rather than a buffer, malformed JSON → 400 not 500, missing text → 400, exhausted window → 429 with `Retry-After` and no invented daily figure, a rejected input spending none of the day's allowance, `/api/status` publishing the limits and where the counters live without any credential-shaped string |
 | `tests/quota.test.ts` | 6 | in-memory counter honours its ceiling and resets on a new UTC day; the Redis path sends one `EVAL` keyed by the day with a seconds-to-midnight TTL; over-quota refused; connection failure, HTTP error and a malformed reply all fail **closed** |
 | `tests/turnstile.test.ts` | 9 | off by default; enabled without a secret refuses; no token never calls Cloudflare; success sends secret + token + remote IP; error codes surfaced; a replayed token is refused without a second call; an unreachable verifier refuses **and** releases its claim so a retry still works; non-200 fails closed; the Redis claim stores only the SHA-256 |
 | `tests/identity.test.ts` | 4 | with `TRUST_PROXY`, the last hop of `x-forwarded-for` wins over a client-seeded first hop; `cf-connecting-ip` preferred; without it, claimed addresses fold into stable buckets instead of minting unlimited identities; no address at all → one shared bucket |
+| `tests/body.test.ts` | 5 | reads a body under the limit and exactly at it; refuses the first byte over and stops pulling instead of buffering; an absent body is empty rather than an error; a multi-byte character split across two chunks decodes intact |
+| `tests/deploy-preflight.test.ts` | 8 | the audit passes a bounded live environment, prints the daily spend in credits and never the key; it fails live-without-a-key, live-with-an-in-memory-ceiling, any `NEXT_PUBLIC_*`, a human check on without a secret, and a key that kept its quotes; an explicitly accepted in-memory ceiling warns instead of failing; a simulated deployment with a key set warns about the exposure |
 | `tests/live-contract.test.ts` | 11 | recorded **real** 200 responses (`tests/fixtures/clocked-*.json`) normalise into the domain types; every span slices to its value; the rebuilt masked copy equals Clocked's own `anonymized_text`; Inspect offsets are document offsets and produce lines 1–4; the fixtures contain no credential |
 
 The two invariants that matter most, both enforced by tests:

@@ -46,6 +46,7 @@ lib/
   quota.ts              daily ceiling: memory, or one atomic Redis EVAL when configured; fail-closed
   turnstile.ts          server-side human-check verification + single-use token claims
   redis-rest.ts         minimal REST client for a Redis-compatible endpoint (Upstash shape)
+  body.ts               bounded request-body reader: 512 KB ceiling, stream cancelled at the limit
 tests/                  vitest unit + integration
 tests/fixtures/         verbatim real responses recorded 2026-10-30 (synthetic samples only)
 e2e/                    playwright, desktop + mobile
@@ -53,6 +54,7 @@ docs/                   rules, API research, architecture, test report, submissi
 scripts/live-acceptance.mjs  server-side acceptance: three real SDK calls, recorded with status, shape, verdict and source
 scripts/live-verify.mjs  the same three calls through Chromium; verification harness, never imported by app/
 scripts/collect-diagnostics.mjs  credential-free edge diagnostics for a provider escalation (output in .local/)
+scripts/deploy-preflight.mjs     audits the environment a host will run with; exit 1 if it must not ship
 .github/workflows/live-check.yml  manual-trigger run of verify:live on a GitHub runner, to test a cloud egress
 ```
 
@@ -87,6 +89,7 @@ npm test             # vitest: policy, redaction, highlight, report, validation,
 npm run test:e2e     # playwright desktop + mobile (starts its own server on :3100)
 npm run verify       # typecheck + lint + test + build
 npm run accept:check # credential preflight: source file, fingerprint, nothing sent
+npm run deploy:preflight  # audits a deployment environment (secrets, public vars, ceiling); exit 1 = do not ship
 npm run accept:live  # server-side acceptance: three real Clocked calls through the SDK (key from .env.local)
 npm run verify:live  # alias of accept:live
 npm run verify:live:browser  # the same calls through Chromium (see §6 on the edge challenge)
@@ -111,7 +114,7 @@ Playwright downloads browsers once: `npx playwright install chromium`.
 | Area | State |
 | --- | --- |
 | Build, typecheck, lint | clean, 0 warnings |
-| Unit/integration tests | 153 passing (20 files, incl. contract tests against recorded real responses, a policy-trace suite, a credential-hygiene suite, guards for origin/admission/HTTP limits, and the quota, Turnstile and caller-identity suites) |
+| Unit/integration tests | 167 passing (22 files, incl. contract tests against recorded real responses, a policy-trace suite, a credential-hygiene suite, guards for origin/admission/HTTP limits/body bounds, and the quota, Turnstile, caller-identity and deployment-audit suites) |
 | Browser tests | 44 passing, 2 deliberate skips (23 scenarios × desktop + mobile) |
 | Live Clocked detections | **verified 2026-10-30 through a browser**: `/injection` 0.9957 critical, `/pii` 6 entities incl. both custom kinds, `/script` 0.9948 malicious. 12 credits / $0.0024 per full screen |
 | Live path from the server | **refused on two networks, and the refusal follows the client**: `403 cf-mitigated: challenge` before authentication on the calls that connect, `UND_ERR_CONNECT_TIMEOUT` on the calls that do not; from one public IP, Node and `curl` are challenged while Chromium gets `200` (`docs/API_INTEGRATION.md` §6.3, §6.3.2). All end in `Screening unavailable` |

@@ -242,6 +242,35 @@ Two further details of the implementation are worth stating because they are eas
   hop of `x-forwarded-for` (the one a proxy appended) only when `TRUST_PROXY=1`; otherwise a claimed
   address is folded into 64 buckets, which is a fairness partition, not proof. The ceilings that bound
   spending are the daily quota and the Turnstile gate, not the bucket.
-- **The quota is consumed last**, after the window and concurrency checks, so a request refused for either
-  of those does not spend the deployment's allowance for everyone else. A granted reservation is never
-  refunded: a screening that fails locally may still have been billed upstream.
+- **The quota is consumed last** — after the window and concurrency checks, and after the body has parsed
+  and validated. A request refused for any of those reasons does not spend the deployment's allowance for
+  everyone else, and neither does a paste that is too long or a malformed body: only a screening that is
+  about to reach a detector is charged. A granted reservation is never refunded, because a screening that
+  fails locally may still have been billed upstream.
+
+## 13. The credential and the build — checked in the artefact, not just in the source (2026-11-01)
+
+Source-level rules are in §3 and are enforced by `tests/harness-hygiene.test.ts`. This section records the
+checks that look at what actually ships, because a build step can inline a value that no source file ever
+mentions.
+
+| Check | How | Result |
+| --- | --- | --- |
+| No credential in the browser bundle | `npm run build` with the key present in `.env.local`, then `grep -rlF "<key>" .next` | **no match anywhere in `.next`** |
+| No `NEXT_PUBLIC_*` in the bundle | `grep -rl "NEXT_PUBLIC_" .next/static` | no match; no such variable exists in the source either |
+| The variable *name* in the bundle | `grep -rl "CLOCKED_API_KEY" .next/static` | one match, and it is the mock banner's instruction text ("Adding `CLOCKED_API_KEY` to `.env.local`") — a name, not a value, and the name is public knowledge |
+| One read point | `tests/harness-hygiene.test.ts` asserts the string `process.env.CLOCKED_API_KEY` appears only in `lib/clocked/live.ts` and `lib/config.ts` | enforced by test |
+| No client component imports server config | the same suite | enforced by test |
+| What `/api/status` publishes | `app/api/status/route.ts` | mode, limits, quota store, gate state, `trustProxy`; `configuredKey` is a boolean, never the key |
+| A hosted value cannot be overwritten by the repo | `render.yaml` marks every secret `sync: false` | the dashboard value is the only copy |
+
+Three operational notes that go with it:
+
+- **A shell export silently wins over `.env.local`.** `npm run accept:check` compares the two in memory and
+  prints only length and a SHA-256 prefix, which is how a key that was rotated in one place and not the
+  other gets caught before it wastes an acceptance run.
+- **Deploy with the key in the host's environment panel, never in a variable a client can read.** The
+  deployment audit (`npm run deploy:preflight`) fails on any `NEXT_PUBLIC_*` variable for this reason,
+  including one added for an unrelated purpose.
+- **The exit codes are part of the control.** `deploy:preflight` returns non-zero, and the CI workflow fails
+  the job, so "we forgot to check" shows up as a red build rather than as a bill.
