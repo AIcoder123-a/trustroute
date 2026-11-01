@@ -116,8 +116,10 @@ describe('HTTP guards on the public routes', () => {
     expect(body.admission).toEqual({
       store: 'memory',
       sharedAcrossInstances: false,
+      window: { store: 'memory', sharedAcrossInstances: false },
       turnstile: 'off',
       trustProxy: false,
+      platform: null,
     });
     expect((body.limits as Record<string, number>).dailyScreens).toBe(LIMITS.dailyScreens);
     expect(serialised).not.toMatch(/CLOCKED_API_KEY|bearer|api[_-]?key/i);

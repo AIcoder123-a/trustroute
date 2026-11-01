@@ -1,11 +1,22 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { admit, release, resetAdmission } from '@/lib/admission';
+import { admit, release, resetAdmission, windowStore } from '@/lib/admission';
 import { LIMITS } from '@/lib/config';
 import { resetRateLimit } from '@/lib/ratelimit';
 
+function jsonResponse(payload: unknown, status = 200): Response {
+  return new Response(JSON.stringify(payload), { status, headers: { 'content-type': 'application/json' } });
+}
+
 describe('admission control', () => {
   beforeEach(() => {
+    resetAdmission();
+    resetRateLimit();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
     resetAdmission();
     resetRateLimit();
   });
@@ -58,6 +69,56 @@ describe('admission control', () => {
   // that never reaches a detector cannot spend the deployment's allowance.
   it('answers only about window and concurrency', async () => {
     const result = await admit('a', 6_000);
-    expect(Object.keys(result).sort()).toEqual(['allowed', 'limit', 'reason', 'remaining', 'retryAfterSeconds']);
+    expect(Object.keys(result).sort()).toEqual(['allowed', 'limit', 'reason', 'remaining', 'retryAfterSeconds', 'store']);
+  });
+
+  /**
+   * On a serverless host the process-local map counts for one invocation. The
+   * shared window is what makes this ceiling mean anything there, so its wiring
+   * is checked rather than assumed.
+   */
+  it('counts the window in Redis when one is configured', async () => {
+    vi.stubEnv('UPSTASH_REDIS_REST_URL', 'https://redis.example');
+    vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', 'test-token');
+    const fetchImpl = vi.fn(async () => jsonResponse({ result: 2 }));
+    vi.stubGlobal('fetch', fetchImpl);
+
+    expect(windowStore()).toBe('redis');
+    const result = await admit('a', 7_000);
+    expect(result.allowed).toBe(true);
+    expect(result.store).toBe('redis');
+    expect(result.remaining).toBe(LIMITS.requestsPerWindow - 2);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses on a window exhausted in Redis, not in this instance', async () => {
+    vi.stubEnv('UPSTASH_REDIS_REST_URL', 'https://redis.example');
+    vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', 'test-token');
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ result: LIMITS.requestsPerWindow + 1 })));
+
+    const result = await admit('a', 7_500);
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toBe('window');
+    expect(result.store).toBe('redis');
+  });
+
+  /**
+   * Not fail-closed, unlike the daily quota: an unreadable fairness counter must
+   * not take the demo down, because it cannot cost anything. The quota is charged
+   * later in the route and refuses there.
+   */
+  it('falls back to the in-process window when Redis cannot answer', async () => {
+    vi.stubEnv('UPSTASH_REDIS_REST_URL', 'https://redis.example');
+    vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', 'test-token');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('connect ECONNREFUSED');
+      }),
+    );
+
+    const result = await admit('a', 8_000);
+    expect(result.allowed).toBe(true);
+    expect(result.store).toBe('memory');
   });
 });

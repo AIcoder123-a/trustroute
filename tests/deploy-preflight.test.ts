@@ -16,7 +16,7 @@ const FAKE_KEY = 'local-test-key-0123456789';
 function run(overrides: Record<string, string>): { code: number; out: string } {
   const base: NodeJS.ProcessEnv = { ...process.env };
   for (const name of Object.keys(base)) {
-    if (/^(CLOCKED_|UPSTASH_|TURNSTILE_|NEXT_PUBLIC_|DAILY_SCREENS|RATE_LIMIT_REQUESTS|TRUST_PROXY|ALLOW_IN_MEMORY_QUOTA)/.test(name)) {
+    if (/^(CLOCKED_|UPSTASH_|TURNSTILE_|NEXT_PUBLIC_|DAILY_SCREENS|RATE_LIMIT_REQUESTS|TRUST_PROXY|PLATFORM|ALLOW_IN_MEMORY_QUOTA)/.test(name)) {
       delete base[name];
     }
   }
@@ -48,6 +48,25 @@ describe('deployment preflight', () => {
     // The whole point: the value is described, never printed.
     expect(result.out).not.toContain(FAKE_KEY);
     expect(result.out).toContain(`present (${FAKE_KEY.length} characters, not printed)`);
+  });
+
+  /**
+   * The two values that decide whether callers can be told apart cannot live in
+   * a Netlify config file, because Netlify exposes those to builds only. So a
+   * deployment can look configured and read nothing — worth a warning, because
+   * the symptom is judges sharing a window they never spent.
+   */
+  it('warns when a Netlify deployment would never read its own client-IP header', () => {
+    const result = run({ CLOCKED_MODE: 'mock', PLATFORM: 'netlify' });
+    expect(result.code).toBe(0);
+    expect(result.out).toContain('WARN  platform_identity');
+    expect(result.out).toContain('folded into 64 buckets');
+  });
+
+  it('accepts the Netlify identity path when both values are set', () => {
+    const result = run({ CLOCKED_MODE: 'mock', PLATFORM: 'netlify', TRUST_PROXY: '1' });
+    expect(result.out).toContain('PASS  platform_identity');
+    expect(result.out).toContain('x-nf-client-connection-ip');
   });
 
   it('refuses a live deployment with no key', () => {

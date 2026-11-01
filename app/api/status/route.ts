@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { windowStore } from '@/lib/admission';
 import { ABUSE, LIMITS, hasApiKey, resolveRunMode, turnstileState } from '@/lib/config';
 import { quotaStore } from '@/lib/quota';
 
@@ -44,10 +45,22 @@ export async function GET() {
       admission: {
         store: quotaStore(),
         sharedAcrossInstances: quotaStore() === 'redis',
+        /**
+         * The per-caller window is a separate store with a separate meaning: it
+         * bounds fairness, not spend. On a serverless host a `memory` window
+         * counts for one invocation and stops there, so it is published even
+         * when the quota beside it is shared.
+         */
+        window: {
+          store: windowStore(),
+          sharedAcrossInstances: windowStore() === 'redis',
+        },
         /** `off` | `required` | `misconfigured` — the human-check gate. */
         turnstile: turnstileState(),
-        /** Whether `x-forwarded-for` is believed; false on a direct-to-origin deploy. */
+        /** Whether edge-written address headers are believed; false on a direct-to-origin deploy. */
         trustProxy: ABUSE.trustProxy,
+        /** `netlify` when the deployment declared it, which enables that host's client-IP header. */
+        platform: (process.env.PLATFORM ?? '').trim().toLowerCase() || null,
       },
     },
     { headers: { 'Cache-Control': 'no-store' } },

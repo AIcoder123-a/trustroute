@@ -10,6 +10,8 @@ const config = [
   {
     ignores: [
       '.next/**',
+      // Netlify CLI writes its bundled adapter here on a local build.
+      '.netlify/**',
       'node_modules/**',
       'playwright-report/**',
       'test-results/**',

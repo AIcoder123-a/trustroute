@@ -203,6 +203,9 @@ Still weak, and stated so it is not mistaken for solved:
 
 ## 12. The rate limiter is a speed bump on a multi-instance host (audited 2026-11-01)
 
+> **Partly superseded by §14.** The window is now shared when Redis is configured, and the analysis
+> below is what remains true when it is not. Read §14 before relying on any number here.
+
 Asked directly in review: are the IP, concurrency and daily limits dependent on single-process memory? Yes.
 Both stores are module-level `Map`s — `windows` in `lib/ratelimit.ts` and the admission state in
 `lib/admission.ts` — so the limits are exact only while exactly one process serves the demo.
@@ -211,12 +214,12 @@ Both stores are module-level `Map`s — `windows` in `lib/ratelimit.ts` and the 
 | --- | --- |
 | State is per process | N instances give `N × DAILY_SCREENS` of headroom, and the concurrency slot is per instance |
 | State dies with the process | a cold start or a redeploy resets the day's count; scale-to-zero forgets it every time the demo sleeps |
-| The window is per caller key | the key is `x-forwarded-for[0]`, trustworthy only when the host's edge rewrites the header — direct-to-origin, a client can present a new IP per request |
+| The window is per caller key | the key is an edge-written address, trustworthy only when the host's edge rewrites the header — direct-to-origin, a client can present a new IP per request |
 | Nothing is signed | a request that reaches the process is trusted to have come through the edge |
 
 So the honest statement is: on Vercel (or any host that runs several instances) the daily ceiling is a
-speed bump, not a ceiling. On a single long-lived process it is exact. That is the operational reason
-`docs/DEPLOYMENT.md` §4.1 prefers one free instance over a serverless platform with better limits.
+speed bump, not a ceiling. On a single long-lived process it is exact. §14 covers what changed when a
+serverless host was chosen anyway, and which of these properties survive.
 
 The two controls that would make it exact are now **implemented and unit-tested, and disabled until
 configured**:
@@ -274,3 +277,44 @@ Three operational notes that go with it:
   including one added for an unrelated purpose.
 - **The exit codes are part of the control.** `deploy:preflight` returns non-zero, and the CI workflow fails
   the job, so "we forgot to check" shows up as a red build rather than as a bill.
+
+## 14. What a serverless host changes, and what it does not (2026-11-01)
+
+The deployment moved to Netlify, where each invocation may run in a freshly created instance that is
+discarded afterwards. That is a stronger version of the problem §12 describes, and it needs its own
+statement because the numbers in §12 are phrased for "several instances" rather than "no process at all".
+
+The four ceilings, re-stated for a host with no persistent process:
+
+| Ceiling | Where it lives now | What is true on Netlify |
+| --- | --- | --- |
+| Human-check (Turnstile) | verified server-side per request | unchanged — it holds no state |
+| Per caller, per window | **Redis when configured**, else memory | in memory it counts for **one invocation**; it does not become approximate, it stops counting. Redis makes it shared and correct |
+| Per caller, concurrent | process memory, deliberately | a concurrency slot is per instance by construction; across N instances the effective ceiling is `N × concurrentPerCaller`. Not moved to Redis: a slot with no reliable release path leaks on every crash |
+| Whole deployment, per UTC day | **Redis when configured**, else memory | in memory the ceiling is "as many screens as there are concurrent invocations", then it is forgotten. This is the one that guards money |
+
+Three asymmetries are deliberate rather than incidental:
+
+- **The quota fails closed, the window does not.** An unreadable daily counter returns `503
+  quota_unavailable` and nothing is screened; an unreadable window counter degrades to the in-process
+  counter and the request continues. The window bounds fairness, the quota bounds spend, and only one of
+  those justifies an outage.
+- **The quota is charged after validation, the window before it.** A malformed body costs the caller a
+  window slot (it did make a request) but not the deployment a screening (it never reached a detector).
+- **The window key is hashed before it becomes a Redis key name.** The store is operated on somebody
+  else's account, and a caller address is a person; `windowKey()` keeps a truncated SHA-256 and the window
+  bucket index, nothing else.
+
+**Address identity is platform-specific, and now says so.** Netlify's own guidance is that
+`X-Forwarded-For` carries CDN node addresses on their platform and must not be used to identify a visitor;
+the authoritative header is `x-nf-client-connection-ip`. Reading that header unconditionally would be a
+spoofing hole on any other host — a client could invent an identity per request — so it is read only when
+`PLATFORM=netlify` is set *and* `TRUST_PROXY=1`. Neither value is a secret, and neither can be set from
+`netlify.toml`, because Netlify's configuration-file variables reach builds but not functions. A deployment
+that forgets them is not broken: it reports `trustProxy: false` / `platform: null` on `/api/status` and
+folds every visitor into 64 buckets, which is coarse but not exploitable.
+
+**What a deployment without Redis can still claim:** nothing is spent twice, the day's ceiling bounds the
+worst case to the number of concurrent invocations, the remaining budget is on every response, and a
+screening that the budget refused returns `429` rather than a fabricated verdict. **What it must not
+claim:** that the per-caller window limits one caller. It does not, and §12's table says why.

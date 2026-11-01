@@ -114,12 +114,12 @@ Playwright downloads browsers once: `npx playwright install chromium`.
 | Area | State |
 | --- | --- |
 | Build, typecheck, lint | clean, 0 warnings |
-| Unit/integration tests | 167 passing (22 files, incl. contract tests against recorded real responses, a policy-trace suite, a credential-hygiene suite, guards for origin/admission/HTTP limits/body bounds, and the quota, Turnstile, caller-identity and deployment-audit suites) |
+| Unit/integration tests | 180 passing (23 files, incl. contract tests against recorded real responses, a policy-trace suite, a credential-hygiene suite, guards for origin/admission/HTTP limits/body bounds, and the quota, shared-window, Turnstile, caller-identity and deployment-audit suites) |
 | Browser tests | 44 passing, 2 deliberate skips (23 scenarios × desktop + mobile) |
 | Live Clocked detections | **verified through a browser 2026-10-30**: `/injection` 0.9957 critical, `/pii` 6 entities incl. both custom kinds, `/script` 0.9948 malicious |
 | Live path from the server | **verified 2026-11-01 from a GitHub-hosted runner**: three calls through `clocked-sdk`, all `200`, no challenge, 12 credits / $0.0024 (`docs/TEST_REPORT.md` §4.4). From this machine the same client is still challenged or times out (`docs/API_INTEGRATION.md` §6.3) — the refusal is about *this path*, not about non-browser clients |
-| Rate limiting | window + concurrency in-process (exact: Render free is one instance); daily ceiling in-process by default, **Redis when `UPSTASH_REDIS_REST_*` is set** (one atomic `EVAL`, fail-closed); Turnstile verification implemented but **off**, because the browser widget is not shipped (`docs/RENDER.md` §5). On Render free the in-process ceiling resets on every sleep — `docs/RENDER.md` §10 is the precondition for going live |
-| Deployment | not deployed. Render Free chosen; `render.yaml` declares **no secret** so the simulated deploy cannot leak one; `docs/RENDER.md` §8 is the two-phase plan |
+| Rate limiting | window + daily ceiling **shared in Redis when `UPSTASH_REDIS_REST_*` is set**, in process memory otherwise; concurrency stays per instance on purpose. The daily counter fails closed, the window degrades to memory (`docs/SECURITY_NOTES.md` §14). Turnstile verification implemented but **off**, because the browser widget is not shipped (`docs/RENDER.md` §5). On a serverless host the memory path counts for one invocation — shared counters are the precondition for going live |
+| Deployment | not deployed. **Netlify Free** is the current target (`netlify.toml` declares no secret); Render is blocked because its Blueprint flow asks for a card, and `render.yaml` is kept unmodified. `docs/NETLIFY.md` §8 is the two-phase plan |
 | Git remote | **private GitHub** `AIcoder123-a/trustroute`, branch `master`. Actions workflow `live-check` is manual-only (`workflow_dispatch`) and has run once |
 
 Open items and blockers are tracked in `docs/IMPLEMENTATION_PLAN.md` §6–7.
@@ -128,8 +128,8 @@ Open items and blockers are tracked in `docs/IMPLEMENTATION_PLAN.md` §6–7.
 
 1. The field structure is recorded (`docs/API_INTEGRATION.md` §6.2, `tests/fixtures/`) and the server-side
    path is proven from a cloud egress (`docs/TEST_REPORT.md` §4.4). What remains is the deployment, and it
-   is two phases, not one: deploy simulated with **no key on the host** (`docs/RENDER.md` §8 phase 1), make
-   the day ceiling shared before going live (§10), then spend exactly one screen proving Render's own
-   egress (§7.3). Replace nothing else — the mock stays a mock.
+   is two phases, not one: create the Netlify project simulated with **no key on the host**
+   (`docs/NETLIFY.md` §8), verify `/api/status` (§9), then make the counters shared before going live (§6).
+   Replace nothing else — the mock stays a mock.
 2. Re-run `npm run verify` and `npm run test:e2e`.
 3. Only then touch `docs/SUBMISSION_DRAFT.md` with real URLs.

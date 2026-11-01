@@ -29,6 +29,7 @@ const windowRaw = Number(env.RATE_LIMIT_REQUESTS);
 const turnstileEnabled = (env.TURNSTILE_ENABLED ?? '').trim().toLowerCase() === 'true';
 const hasTurnstileSecret = (env.TURNSTILE_SECRET ?? '').trim().length > 0;
 const trustProxy = (env.TRUST_PROXY ?? '').trim() === '1';
+const platform = (env.PLATFORM ?? '').trim().toLowerCase();
 const allowInMemoryQuota = (env.ALLOW_IN_MEMORY_QUOTA ?? '').trim() === '1';
 const publicVars = Object.keys(env).filter((name) => name.startsWith('NEXT_PUBLIC_'));
 
@@ -125,6 +126,22 @@ check(
   trustProxy
     ? 'x-forwarded-for is believed — correct only behind the host edge that rewrites it'
     : 'x-forwarded-for is ignored, so callers are folded into 64 buckets and the per-caller window is coarse',
+);
+
+// Two non-secret values decide whether a caller can be told apart at all, and
+// neither one can live in a host config file: Netlify's configuration-file
+// variables reach builds, not functions. A deployment can therefore look
+// configured and still read nothing, so the pair is checked together.
+check(
+  'platform_identity',
+  platform === '' || trustProxy ? 'pass' : 'warn',
+  platform === 'netlify'
+    ? trustProxy
+      ? 'netlify: caller identity comes from x-nf-client-connection-ip, the header Netlify documents for this'
+      : 'PLATFORM=netlify without TRUST_PROXY=1: the header is never read, so every visitor is folded into 64 buckets'
+    : platform === ''
+      ? 'no platform declared; addresses are read from x-forwarded-for when TRUST_PROXY=1'
+      : `PLATFORM=${platform} has no special handling; addresses are read from x-forwarded-for`,
 );
 
 check(

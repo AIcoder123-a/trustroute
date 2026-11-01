@@ -190,7 +190,7 @@ lib/copy             mode-aware wording: a sentence about Clocked can only exist
 
 | Layer | Count | Command |
 | --- | --- | --- |
-| Unit / integration (vitest) | 167 assertions in 22 files | `npm test` |
+| Unit / integration (vitest) | 180 assertions in 23 files | `npm test` |
 | Browser (Playwright, desktop + mobile) | 46 runs (23 scenarios × 2 viewports), 44 passing, 2 deliberate skips | `npm run test:e2e` |
 
 The browser suite walks the real flow: load a case → screen → read the decision → inspect the masked copy →
@@ -233,13 +233,13 @@ approve → export JSON → print sheet, at 1440×900 and 390×844. Details and 
   It exists so the review flow can be exercised without a key, and it is never presented as Clocked
   output. There is no code path that falls back to it after a failed live call.
 - The simulated detector is a heuristic simulator, not a detector.
-- The audit trail and the per-caller window/concurrency counters are in process memory. On one instance
-  that is exact; on a host that runs several, the window becomes `instances × requestsPerWindow` and a cold
-  start resets it (`docs/SECURITY_NOTES.md` §12). The daily ceiling can be moved to Redis
-  (`UPSTASH_REDIS_REST_*`, one atomic `EVAL`, fail-closed) and the human check to Turnstile
-  (`TURNSTILE_*`); both ship in `lib/`, both are off until configured, and the Turnstile half still needs
-  the browser widget (`docs/RENDER.md` §5). Until either is on, the rule is one instance and
-  `DAILY_SCREENS ≤ 40`.
+- The audit trail and the per-caller concurrency counter are in process memory. On one long-lived process
+  that is exact; on a serverless host an invocation that starts empty cannot count what the previous one
+  did, so **both the daily ceiling and the per-caller window move to Redis** when
+  `UPSTASH_REDIS_REST_*` is set (one atomic `EVAL` each — the daily one fails closed, the window degrades
+  to memory, `docs/SECURITY_NOTES.md` §14). A live deployment without it is refused by
+  `npm run deploy:preflight`. The human check can move to Turnstile (`TURNSTILE_*`), but that half still
+  needs the browser widget (`docs/RENDER.md` §5).
 - The same-origin check stops other *pages*, not other *clients*: it is a browser rule, never a limiter.
 - No authentication. A public deployment needs a gate in front of it, or a very small daily budget.
 - Content is capped (16k prose / 32k script) and rejected rather than truncated, so a screen always covers
@@ -255,8 +255,9 @@ approve → export JSON → print sheet, at 1440×900 and 390×844. Details and 
 | `docs/ARCHITECTURE.md` | request lifecycle, decision table, redaction algorithm |
 | `docs/TEST_REPORT.md` | test matrix, results, evidence |
 | `docs/SECURITY_NOTES.md` | threat model, data retention, deliberate weaknesses |
-| `docs/DEPLOYMENT.md` | what a deploy needs, why a cloud host may hit the same 403, and the two cheap ways to find out before deploying |
-| `docs/RENDER.md` | the chosen host: free-plan limits read from Render's docs, the blueprint, the cold start, the minimal cloud connectivity test that needs no deployment (a *private* repository and its Actions workflow), and the rule for switching to live |
+| `docs/DEPLOYMENT.md` | what a deploy needs, how the free hosts compare, and the two cheap ways to find out about the network before deploying |
+| `docs/NETLIFY.md` | **the current deployment**: what the free plan's credits actually cost, what a serverless host changes about the counters, the two-phase plan, and the browser steps the owner has to take |
+| `docs/RENDER.md` | the previous candidate, kept because its limits and its cold-start analysis are still the reference if a card is ever bound to Render |
 | `docs/RELEASE_CHECKLIST.md` | secret scan, what ships, and the ordered launch runbook |
 | `docs/SUBMISSION_DRAFT.md` | entry-form copy and video script |
 | `AGENTS.md` | rules for continuing the work |

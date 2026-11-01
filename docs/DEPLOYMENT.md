@@ -108,40 +108,31 @@ Checked on 2026-11-01. Limits and terms change; re-read the provider's page befo
 | Host | Next 16 runtime | Per-request ceiling | Free-tier terms | Fit |
 | --- | --- | --- | --- | --- |
 | **Vercel Hobby** | native, no adapter | 300 s duration; 4.5 MB payload; 1 M invocations; 100 GB transfer; 4 CPU-hours active CPU | **non-commercial personal use only**; Vercel may remove a Hobby deployment "with or without notice"; Hobby/trial content may be used for model training | technically the best fit, contractually the worst for a prize entry (§4.2) |
-| **Render — free web service** | persistent Node process, `next start` | no function timeout; 512 MB RAM, 0.1 CPU | no commercial-use restriction found (secondary sources; confirm on their pricing page) | **best free fit**: no adapter, long requests allowed, one process so the in-memory counters are exact — cost is a ~1 min cold start after 15 idle minutes |
-| **Netlify — free** | Next.js runtime (adapter) | **10 s per function** on free (26 s on Pro); 300 credits/month | no commercial-use restriction reported | workable only with `CLOCKED_TIMEOUT_MS=8000` and one attempt, otherwise a slow screen returns 502 |
+| **Netlify — free** | Next.js runtime (OpenNext adapter) | **60 s per synchronous function, fixed and not configurable**; 1 GB RAM; 6 MB buffered payload | no card required; commercial use allowed; **300 credits/month hard cap with no overage** (a production deploy costs 15 of them) | **the current choice**: no sleep, so no cold-start wait for a judge; the binding limit is credits, not seconds — `docs/NETLIFY.md` |
+| **Render — free web service** | persistent Node process, `next start` | no function timeout; 512 MB RAM, 0.1 CPU | no commercial-use restriction found (secondary sources; confirm on their pricing page) | still the simplest runtime, but **Blueprint creation now prompts for a payment card** (owner-reported 2026-11-01), so it is not usable without binding one — `docs/RENDER.md` |
 | **Cloudflare Workers / Pages** | OpenNext adapter | **10 ms CPU per request** on free; 100 k requests/day | no commercial-use restriction | the 10 ms CPU ceiling is the blocker for SSR; the paid plan ($5) lifts it — out of scope here |
 | **Fly.io / Railway / Koyeb** | yes | generous | no ongoing free compute; trial credit with an expiry | a demo that dies mid-judging is worse than no demo |
 | **GitHub Pages / any static host** | none | — | — | **impossible by design**: no server means no key handling and no screening |
 
 ### 4.1 Recommendation
 
-**Primary: Render's free web service.** It is the only free option that satisfies all six requirements
-without an adapter, without a function timeout, and without a non-commercial clause. The application is
-already a normal Node server (`next start`), so nothing in the code changes; the only deploy-specific
-detail is binding the port the host provides:
+**Primary: Netlify free.** Two facts changed the ranking on 2026-11-01. First, Netlify's synchronous
+function limit is **60 seconds, not the 10 seconds** this document previously recorded from secondary
+sources — the figure is on Netlify's own "Configuration for functions" page, and the surrounding text says
+explicitly that it is not configurable. Second, Render's Blueprint flow now asks for a payment card at
+creation, which the owner declined. With the 60 s ceiling, nothing in the transport budget has to shrink:
+the three detections run in parallel and were measured at 0.4–0.8 s each, so the app fits with ~50× margin.
 
-```bash
-# Render: build command
-npm ci && npm run build
-# Render: start command — $PORT (default 10000) and 0.0.0.0, not the local 3100
-npx next start -H 0.0.0.0 -p $PORT
-```
+Netlify also removes the cost Render imposed: no sleep, so a judge never waits a minute for a cold start.
 
-`render.yaml` at the repository root encodes the whole service; **`docs/RENDER.md` is the operating manual**
-(limits read from Render's docs on 2026-11-01, the ephemeral-filesystem consequence, health check, cold
-start, and the two-step Turnstile enablement).
+The price is paid in a different currency — **credits**. Netlify's free plan is 300 credits a month as a
+hard cap, and a *production deploy costs 15 credits*, so careless pushing is the scarce resource, not
+requests. The arithmetic and the two-phase plan are in `docs/NETLIFY.md`; the phase-1 configuration
+declares no secret at all.
 
-The **cold start is the accepted cost**: after 15 minutes idle the instance sleeps and the next request
-takes about a minute. Two ways to soften it, neither required: an external uptime pinger every 10 minutes
-during the judging window, or wording the demo link ("first load may take a minute — the instance is
-waking"). Do not hide it; a judge who waits 50 seconds and then sees a working screening is fine, one who
-sees a timeout is not.
-
-**Secondary: Netlify free**, if the cold start is judged worse than a per-request cap. Then the transport
-budget must fit inside the 10 s function limit: `CLOCKED_TIMEOUT_MS=8000`, `CLOCKED_MAX_ATTEMPTS=1`. A
-refused or slow API still ends in `Screening unavailable`, which is the honest state, but a legitimately
-slow screen (three parallel detections, ~1–2 s normally) has less headroom.
+**Secondary: Render's free web service**, if a card is ever bound. It is still the only option that runs a
+persistent process, which makes the in-process counters exact. `render.yaml` and `docs/RENDER.md` are kept,
+unmodified, for that case.
 
 **Vercel Hobby: only with a written answer** from Vercel support, or if the entry is treated as a
 personal, non-commercial project. §4.2 explains why the clause is not a formality here.
@@ -151,8 +142,8 @@ whichever host wins above. The demo is then a labelled simulation — the banner
 the export all say so — and a judge can still open it, run the whole workflow and read the code. That is
 tier C in §7, and it is a fallback for a deadline, not a goal.
 
-**Never** deploy with a live key and an unbounded daily budget. §5 is the arithmetic, §5.2 is why the
-current counters are not enough on a serverless host.
+**Never** deploy with a live key and an unbounded daily budget. §5 is the arithmetic, `SECURITY_NOTES.md` §14 is why the
+window and the daily counter both had to move to a shared store on a serverless host.
 
 ### 4.2 The Vercel clause, read against a prize entry
 

@@ -1,8 +1,16 @@
 # Deploying to Render (free web service)
 
+> **Superseded on 2026-11-01, kept for reference.** Creating the Blueprint now prompts for a payment card
+> before the service is provisioned, and the owner declined to bind one, so this path is blocked at step 1
+> for a reason that has nothing to do with the code. **`docs/NETLIFY.md` is the current plan.**
+>
+> Nothing in this file was made false by that: the limits, the ephemeral-filesystem consequence, the health
+> check and the cold-start analysis are all still accurate and still the reference if a card is ever bound.
+> `render.yaml` is untouched.
+
 The chosen host, and the reasons in order: it runs a **long-lived Node process** (no function timeout, no
 adapter, and the in-memory counters stay exact because a free service is always a single instance), it has
-**no non-commercial clause** like Vercel Hobby's, and it needs **no card**. The price is a cold start.
+**no non-commercial clause** like Vercel Hobby's. The price is a cold start.
 
 Everything below was checked against Render's own documentation on **2026-11-01**:
 <https://render.com/docs/free> and <https://render.com/docs/web-services>. Limits change; re-read them

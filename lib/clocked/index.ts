@@ -14,8 +14,18 @@ export const ENDPOINTS = {
   inspect: 'POST /script',
 } as const;
 
-/** Total budget for a single stage, including the SDK's own retries. */
-const STAGE_BUDGET_MS = 60_000;
+/**
+ * Total budget for a single stage, including the SDK's own retries.
+ *
+ * 45 s, not 60. The three stages run in parallel, so the worst case for a whole
+ * screen is one stage's budget plus the assembly work around it. The binding
+ * host limit is 60 s (Netlify's synchronous function ceiling, not configurable),
+ * and the point of this number is that the route answers with its own structured
+ * `timeout` stage result before the host can kill the invocation. Measured
+ * latency per stage against the real API is 0.4–0.8 s, so 45 s is ~50× headroom,
+ * not a squeeze.
+ */
+const STAGE_BUDGET_MS = 45_000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

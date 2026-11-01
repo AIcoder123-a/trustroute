@@ -44,4 +44,28 @@ describe('caller identity', () => {
   it('keeps every caller in one bucket when there is no address at all', () => {
     expect(callerIdentity(request({})).key).toBe('shared');
   });
+
+  it("reads Netlify's own client-IP header when the deployment declares the platform", () => {
+    vi.stubEnv('PLATFORM', 'netlify');
+    // Netlify's guidance is that X-Forwarded-For carries CDN node addresses, so a
+    // last-hop read there would put every visitor in a handful of buckets.
+    const identity = callerIdentity(
+      request({
+        'x-nf-client-connection-ip': '203.0.113.77',
+        'x-forwarded-for': '198.51.100.7, 10.0.0.4',
+      }),
+      { trustProxy: true },
+    );
+    expect(identity).toMatchObject({ key: '203.0.113.77', source: 'proxy' });
+  });
+
+  it('ignores that header when the platform was never declared', () => {
+    // Ungated, the header would be spoofable on any other host: a client that
+    // sets it per request would manufacture unlimited buckets.
+    const identity = callerIdentity(
+      request({ 'x-nf-client-connection-ip': '203.0.113.77', 'x-forwarded-for': '198.51.100.7' }),
+      { trustProxy: true },
+    );
+    expect(identity.key).toBe('198.51.100.7');
+  });
 });

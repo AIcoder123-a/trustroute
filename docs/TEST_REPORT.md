@@ -30,7 +30,7 @@ vitest 5.0.5, re-verified with the full suite.
 
 ```
 Test Files  22 passed (22)
-     Tests  167 passed (167)
+     Tests  180 passed (180)
 ```
 
 | File | Assertions | Covers |

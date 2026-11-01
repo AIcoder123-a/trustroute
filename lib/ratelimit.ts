@@ -78,11 +78,29 @@ function fnv1a(input: string): number {
 }
 
 /**
+ * The address Netlify's CDN saw, when this deployment is declared to be on
+ * Netlify.
+ *
+ * Netlify's own guidance is explicit that `x-forwarded-for` must not be used to
+ * identify a visitor on their platform — the hops it carries include CDN node
+ * addresses — and that `x-nf-client-connection-ip` is the header to read. Left
+ * ungated that header would be a spoofing hole anywhere else, so it is read only
+ * when the deployment says which platform it is on (`PLATFORM=netlify`).
+ */
+function netlifyClientIp(request: Request): string | null {
+  if ((process.env.PLATFORM ?? '').trim().toLowerCase() !== 'netlify') return null;
+  return request.headers.get('x-nf-client-connection-ip')?.trim() ?? null;
+}
+
+/**
  * Resolves the caller bucket.
  *
- *   - `TRUST_PROXY=1` and an edge header present → the address the proxy wrote.
- *     `x-forwarded-for` is read **last**, because a proxy appends the address it
- *     saw and a client can only pre-seed the beginning of the list.
+ *   - `TRUST_PROXY=1` and an edge header present → the address the edge wrote.
+ *     Precedence is by specificity: an edge that terminates the connection and
+ *     overwrites its own header is the most specific source available, so
+ *     `cf-connecting-ip` wins, then `x-nf-client-connection-ip`, then the **last**
+ *     `x-forwarded-for` hop — last, because a proxy appends the address it saw
+ *     and a client can only pre-seed the beginning of the list.
  *   - otherwise → the claimed address, folded into a fixed set of buckets so a
  *     client cannot manufacture unlimited identities by inventing addresses. It
  *     is a fairness partition, not a security boundary; the ceilings that bound
@@ -93,7 +111,12 @@ export function callerIdentity(request: Request, options: { trustProxy?: boolean
 
   const forwarded = request.headers.get('x-forwarded-for');
   const hops = forwarded ? forwarded.split(',').map((hop) => hop.trim()).filter(Boolean) : [];
-  const claimed = request.headers.get('cf-connecting-ip')?.trim() ?? hops[hops.length - 1] ?? request.headers.get('x-real-ip')?.trim() ?? null;
+  const claimed =
+    request.headers.get('cf-connecting-ip')?.trim() ??
+    netlifyClientIp(request) ??
+    hops[hops.length - 1] ??
+    request.headers.get('x-real-ip')?.trim() ??
+    null;
 
   if (!claimed) return { key: 'shared', source: 'shared', ip: null };
   if (trustProxy) return { key: claimed, source: 'proxy', ip: claimed };

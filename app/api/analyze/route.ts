@@ -12,7 +12,16 @@ import { validateAnalyzeInput } from '@/lib/validate';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 120;
+/**
+ * 60, not 120. The three detectors already run in parallel and are each bounded
+ * by `STAGE_BUDGET_MS`, so this is a backstop that should never fire. It is 60
+ * because 60 is the lowest ceiling among the hosts this app targets: Netlify's
+ * synchronous function limit is 60 seconds and is not configurable. Declaring
+ * more than the host allows does not buy the extra time — it only hides the
+ * mismatch until the host kills the invocation with its own error instead of
+ * this route's.
+ */
+export const maxDuration = 60;
 
 /**
  * Never forwarded: the browser only needs to know what to do next.

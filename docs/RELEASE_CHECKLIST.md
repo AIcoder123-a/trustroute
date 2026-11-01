@@ -15,7 +15,7 @@ steps marked **owner** need the account holder's decision or credentials.
 | 0.1 | Repository name, owner account, public or private | the rules require a **public** repository with setup instructions and development history | a public repo named `trustroute` under the entrant's account |
 | 0.2 | Licence | the rules require **no particular licence** (see `COMPETITION_RULES.md` §5.2); a repo with no licence is "all rights reserved" by default | §0.2.1 analyses both; the default if undecided is to publish **without** a licence, with the copyright line in `README.md` |
 | 0.3 | Which `docs/` files ship publicly | `SUBMISSION_DRAFT.md`, `COMPETITION_RULES.md` and this file are working notes; the rules only ask for README + setup + history | ship them (they are honest and contain no key), or move them out before the first push |
-| 0.4 | Demo host, and whether it runs **live** or **simulated** | a live public demo spends the account's credits; a simulated one cannot be mistaken for a verdict if the banner is up | Render free, one instance, simulated first; switch to live only after the shared ceiling exists and one screen from the host's own egress works (`RENDER.md` §7.3, §10) |
+| 0.4 | Demo host, and whether it runs **live** or **simulated** | a live public demo spends the account's credits; a simulated one cannot be mistaken for a verdict if the banner is up | Netlify free, simulated first; switch to live only after both Redis counters are shared and one screen from the host's own egress works (`NETLIFY.md` §6, §9) |
 | 0.5 | Whether to wire the Wise question to the organiser | prize payment to a mainland-China recipient is unverified (`COMPETITION_RULES.md` §3.1) | ask before the entry is final |
 
 ### 0.2.1 Licence: all rights reserved vs MIT
@@ -42,7 +42,7 @@ read than MIT and has no legal review behind it.
 ## 1. Pre-flight on the machine
 
 ```bash
-npm run verify                  # typecheck, lint, 167 assertions, production build
+npm run verify                  # typecheck, lint, 180 assertions, production build
 npx playwright test             # 46 runs: 44 passing, 2 deliberate skips
 npm run accept:live             # live status, shape, verdict, data source — or the refusal
 ```
@@ -78,7 +78,7 @@ npm run deploy:preflight
 - [ ] `.gitignore` still covers `.env*`, `.next/`, `.local/`, `test-results/`, `playwright-report/`,
       `.workbuddy/`
 - [ ] `.env.example` carries empty values only, and no real hostname or account id
-- [ ] `render.yaml` holds no secret: every credential is `sync: false` and is typed into the dashboard
+- [ ] `render.yaml` and `netlify.toml` hold no secret: Render marks every credential `sync: false`, and `netlify.toml` declares only build-scoped values
 - [ ] `npm run deploy:preflight` says READY, or the caveats it lists have been read and accepted
 - [ ] The build output is clean: no match for the key value anywhere under `.next`
 - [ ] `README.md`, `docs/*.md` and every screenshot are free of keys, tokens, emails and personal data
@@ -129,8 +129,8 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST https://<demo-host>/api/analyze
       *Screening unavailable — manual review required*, never PASS (`docs/SCREENSHOTS.md` §2)
 - [x] `npm run accept:live` from a machine that is not this one — **done 2026-11-01** via the `live-check`
       workflow: three `200`s, 12 credits, no challenge (`TEST_REPORT.md` §4.4). Re-run after any rotation
-- [ ] One screen from the **deployed** service, to learn whether Render's own egress behaves the same
-      (`RENDER.md` §7.3) — a runner is not Render
+- [ ] One screen from the **deployed** service, to learn whether its egress behaves the same
+      (`NETLIFY.md` §6) — a GitHub runner is not the host
 
 ## 6. The demo link
 
@@ -174,7 +174,7 @@ it proves; a step that is skipped is a claim that has to be softened later.
 | 4 | Decide the tier | `DEPLOYMENT.md` §7 A/B/C | what the entry is allowed to claim |
 | 5 | Secret scan and deployment audit | §2 of this file, plus `npm run deploy:preflight` | the repo can be made public, and the host's environment cannot overspend or leak |
 | 6 | Create the public repository | owner | the rules' repository requirement |
-| 7 | Deploy with `CLOCKED_MODE=mock`, **no secret on the host** | Render Blueprint from `render.yaml`; build `npm ci && npm run build`, start `npx next start -H 0.0.0.0 -p $PORT` | the build runs on the host, and a wrong turn costs nothing — and there is no key present to leak (`RENDER.md` §8 phase 1) |
+| 7 | Deploy with `CLOCKED_MODE=mock`, **no secret on the host** | Netlify project from `netlify.toml`; build `npm run build`, publish `.next` | the build runs on the host, and a wrong turn costs nothing — and there is no key present to leak (`NETLIFY.md` §8) |
 | 8 | Verify from outside | §5 of this file (`/api/status`, headers, cross-origin 403) | the deployed instance behaves like the local one |
 | 9 | Move the ceiling off the process **before** live | add `UPSTASH_REDIS_REST_URL`/`_TOKEN`; `/api/status` must report `admission.store: "redis"` and the counter must survive a restart | `RENDER.md` §10 — on a free instance an in-memory ceiling resets on every 15-minute sleep |
 | 10 | Switch to live | `CLOCKED_MODE=live`, `DAILY_SCREENS=20`, `RATE_LIMIT_REQUESTS=10`, redeploy | the demo screens for real, within a bounded budget |

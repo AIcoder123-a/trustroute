@@ -85,7 +85,7 @@ Protect run for every content type; Inspect runs only when the content is a scri
 | Item | State |
 | --- | --- |
 | Build, typecheck, lint | clean, 0 warnings |
-| Unit / integration tests | 167 passing in 22 files |
+| Unit / integration tests | 180 passing in 23 files |
 | Browser tests | 46 runs (23 scenarios × desktop + mobile), 44 passing, 2 deliberate skips |
 | Live Clocked detections | **verified with a real key** — `/injection` 0.9957 critical, `/pii` 6 entities including two custom kinds, `/script` 0.9948 malicious; 12–19 credits per screen; responses recorded under `tests/fixtures/` and asserted by contract tests |
 | Server-side live path | **verified 2026-11-01 from a GitHub-hosted runner** with the product's own SDK path: three calls, three `200`s, no challenge, 12 credits, no retry (`TEST_REPORT.md` §4.4). From the build machine the same client is still challenged or dropped, and the app reports `Screening unavailable — manual review required`; it never falls back to the simulator |

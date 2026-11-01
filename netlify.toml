@@ -1,0 +1,40 @@
+# Netlify deployment — phase 1 (simulated, no credentials).
+#
+# Nothing in this file is a secret. A simulated deployment needs no key at all,
+# so the service created from this file has nothing to leak. The live phase adds
+# its key and its Redis endpoint in the Netlify UI, never here.
+#
+# The Next.js build is handled by Netlify's OpenNext adapter, which Netlify
+# installs and pins itself. Do not add `@netlify/plugin-nextjs` to package.json:
+# pinning it opts the project out of the adapter updates Netlify ships for new
+# Next.js releases, and this app tracks Next 16.
+#
+# ── Why only two variables are declared here ────────────────────────────────
+# Netlify's environment-variable table draws a sharp line: a value declared in
+# this file is available to **builds**, while a value in the UI/CLI/API can also
+# be available to **functions at runtime**. Nothing in this block reaches the
+# function that serves every request, so putting TRUST_PROXY or PLATFORM here
+# would look like configuration and behave like a comment.
+#
+# The runtime variables are therefore set in the UI, and `docs/NETLIFY.md` §8
+# lists them with the value each one needs. A deployment that skips that step
+# still runs — `/api/status` reports `trustProxy: false` and `platform: null`,
+# which is how the omission is detected rather than guessed at.
+
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  # Next 16 needs Node 20+; 22 is the version everything here was tested on.
+  # Build-scoped, and also the runtime the function is packaged with.
+  NODE_VERSION = "22"
+  # A deploy that lands mid-session should not break the tab that is open.
+  NETLIFY_NEXT_SKEW_PROTECTION = "true"
+
+# No [[headers]] block on purpose. Netlify documents that custom headers are not
+# applied to responses produced by a function, and every route here is served by
+# the Next runtime's function, so a block here would look like protection while
+# applying to almost nothing. Whether the app's own header rules survive into a
+# function response is measured after the first deploy, not assumed —
+# docs/NETLIFY.md §9 step 4.
