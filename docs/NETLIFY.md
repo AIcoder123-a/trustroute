@@ -138,6 +138,11 @@ not `instances × limit` in the worst case but *as many screens as there are con
 | 4. Redeploy; screen one one-click case | 12–19 credits; the point is `mode` and the stage statuses, not a verdict |
 | 5. `X-Daily-Remaining` decreases by one, and **keeps decreasing after a redeploy** | A counter that resets on deploy is not a counter. This is the only check that distinguishes a real ceiling from a decorative one |
 
+**One deploy or two?** The order above is written for a site that is already reachable, where "a key with a
+ceiling that is not real" is a window somebody can spend in. While the site is still unpublished that window
+has no visitors, so setting all six values in one edit and running §12 step 1 immediately is equivalent and
+saves 15 credits. The two-step order becomes the right one the moment the URL is public.
+
 If step 4 returns `Screening unavailable — manual review required`, the service's egress was challenged
 too. Switch `CLOCKED_MODE` back to `mock` and say so — the product refuses to fake a verdict, and so should
 the deployment.
