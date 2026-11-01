@@ -335,8 +335,9 @@ Result on 2026-11-01, from this machine, no browser involved, `CLOCKED_MAX_ATTEM
 | `POST /pii` | `timeout` | — | 10,660 ms | — | — | 0 | — |
 | `POST /script` | `edge_challenge` | **403** | 728 ms | `text/html` | — (`PermissionDeniedError`) | 0 | `a5384d90de0f45f7-SEA` |
 
-**Run B — phone hotspot (afternoon, the network the demo would be judged from).** Egress confirmed as
-`[redacted]`, AS24445 China Mobile, by two independent clients before the run.
+**Run B — phone hotspot (afternoon, the network the demo would be judged from).** Egress confirmed as a
+China Mobile carrier address (AS24445) by two independent clients before the run. The address itself is
+withheld from this document: it identifies a subscriber line, and it is not needed to read the result.
 
 | Endpoint | Category | HTTP | Latency | Response type | Verdict | Credits | `cf-ray` |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -400,7 +401,7 @@ alike. On the hotspot, in one sitting, with **no credential in any of these requ
 | `curl` 8.x | `GET /` ×2 | `403` + `cf-mitigated: challenge`, ~1.15 s each |
 | Chromium (Playwright, no key) | `GET /` | **`200`**, `finalTitle: "Clocked — A frontier model for decisions and exact extraction."`, no challenge |
 
-Same public address (`[redacted]`), same minute, no cookie or session carried over, and the browser
+Same public address, same minute, no cookie or session carried over, and the browser
 was not given a credential — it was only asked whether the page loads.
 
 **Interpretation.** The rule discriminates on *what the client looks like*, not on where it connects from.
