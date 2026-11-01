@@ -218,13 +218,30 @@ So the honest statement is: on Vercel (or any host that runs several instances) 
 speed bump, not a ceiling. On a single long-lived process it is exact. That is the operational reason
 `docs/DEPLOYMENT.md` §4.1 prefers one free instance over a serverless platform with better limits.
 
-The two controls that would make it exact — a Turnstile gate (free, unlimited verifications, no shared
-state) and a shared atomic counter (Upstash free tier, three commands per screen, fail-closed) — are
-specified in `docs/DEPLOYMENT.md` §5.2 and deliberately **not implemented**: each needs an account and an
-accepted failure mode, and neither can be exercised in this repository's test suite. Until one exists, the
-deployment rule is one instance, `DAILY_SCREENS ≤ 40`, and watch `X-Daily-Remaining`.
+The two controls that would make it exact are now **implemented and unit-tested, and disabled until
+configured**:
+
+| Control | Code | Default | What has to happen before it protects anything |
+| --- | --- | --- | --- |
+| Turnstile gate | `lib/turnstile.ts` | off | a Cloudflare site key + secret, **and** the browser widget (not shipped — enabling the server half alone refuses every screening) |
+| Shared atomic daily counter | `lib/quota.ts` + `lib/redis-rest.ts` | off (memory) | `UPSTASH_REDIS_REST_URL` and `_TOKEN`; then the ceiling is one `EVAL`, shared, restart-proof, fail-closed |
+
+Neither can be exercised end to end in this repository's suite, because both need an account: the tests
+drive them through an injected `fetch`, which covers the wire format, the refusal paths and the fail-closed
+branch, but not Cloudflare's or Upstash's actual availability. Until they are configured, the deployment
+rule is one instance, `DAILY_SCREENS ≤ 40`, and watch `X-Daily-Remaining`.
 
 What the product does today to keep the damage bounded: defaults are mode-derived (60 live / 240 mock), the
 remaining daily budget is returned on every response, `GET /api/status` publishes the configured ceilings
 without the key, and the same-origin check stops *other pages* from spending credits — it never claimed to
 stop a script, and §6 of this file lists that as a deliberate weakness rather than a control.
+
+Two further details of the implementation are worth stating because they are easy to get wrong:
+
+- **Identity is not taken from a client-written header by default.** `callerIdentity()` reads the *last*
+  hop of `x-forwarded-for` (the one a proxy appended) only when `TRUST_PROXY=1`; otherwise a claimed
+  address is folded into 64 buckets, which is a fairness partition, not proof. The ceilings that bound
+  spending are the daily quota and the Turnstile gate, not the bucket.
+- **The quota is consumed last**, after the window and concurrency checks, so a request refused for either
+  of those does not spend the deployment's allowance for everyone else. A granted reservation is never
+  refunded: a screening that fails locally may still have been billed upstream.

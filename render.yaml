@@ -1,0 +1,48 @@
+# Render Blueprint — the deployment this project intends to use.
+#
+# Nothing here is deployed by the repository: Render reads this file only after
+# the owner connects the repository in the dashboard. Values marked
+# `sync: false` are prompted for at creation and stored by Render, never here.
+#
+# Verified against https://render.com/docs/free and /docs/web-services on 2026-11-01.
+services:
+  - type: web
+    name: trustroute
+    runtime: node
+    plan: free
+    region: oregon
+    # `npm ci` for a lockfile-exact install; `next build` needs the whole tree.
+    buildCommand: npm ci && npm run build
+    # Render forwards to $PORT (default 10000) and requires the bind on 0.0.0.0.
+    startCommand: npx next start -H 0.0.0.0 -p $PORT
+    # Cheap, always-200, and it publishes the mode without the key.
+    healthCheckPath: /api/status
+    autoDeploy: false
+    envVars:
+      # Next 16 needs Node 20+; 22 matches the version this was tested on.
+      - key: NODE_VERSION
+        value: "22"
+      # Start simulated. Flip to live only after `npm run accept:live` succeeds
+      # from an egress that is not this machine (see docs/RENDER.md §6).
+      - key: CLOCKED_MODE
+        value: mock
+      - key: RATE_LIMIT_REQUESTS
+        value: "10"
+      - key: DAILY_SCREENS
+        value: "40"
+      # Render's load balancer is the only writer of x-forwarded-for in front of
+      # this service, so the header can be believed here.
+      - key: TRUST_PROXY
+        value: "1"
+      - key: CLOCKED_API_KEY
+        sync: false
+      - key: TURNSTILE_ENABLED
+        value: "false"
+      - key: TURNSTILE_SITE_KEY
+        sync: false
+      - key: TURNSTILE_SECRET
+        sync: false
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false

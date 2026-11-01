@@ -49,16 +49,60 @@ export function checkRateLimit(key: string, now = Date.now()): RateLimitResult {
   };
 }
 
-export function callerKey(request: Request): string {
-  const forwarded = request.headers.get('x-forwarded-for');
-  if (forwarded) {
-    const first = forwarded.split(',')[0]?.trim();
-    if (first) return first;
+/**
+ * Where a caller's rate-limit key comes from, and how much that key can be
+ * trusted. The distinction matters: `x-forwarded-for` is a request header, so a
+ * direct connection can put anything in it, and a client that rotates a fake IP
+ * per request would get an unlimited number of buckets.
+ */
+export type IdentitySource = 'proxy' | 'claimed' | 'shared';
+
+export interface CallerIdentity {
+  /** The bucket key handed to the window and concurrency counters. */
+  key: string;
+  source: IdentitySource;
+  /** The address as presented. Never used as proof of anything. */
+  ip: string | null;
+}
+
+/** Claimed addresses are folded into this many buckets unless a proxy is trusted. */
+const CLAIMED_BUCKETS = 64;
+
+function fnv1a(input: string): number {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
   }
-  const realIp = request.headers.get('x-real-ip');
-  if (realIp) return realIp.trim();
-  // Local development and single-tenant demos share a bucket.
-  return 'local';
+  return hash >>> 0;
+}
+
+/**
+ * Resolves the caller bucket.
+ *
+ *   - `TRUST_PROXY=1` and an edge header present → the address the proxy wrote.
+ *     `x-forwarded-for` is read **last**, because a proxy appends the address it
+ *     saw and a client can only pre-seed the beginning of the list.
+ *   - otherwise → the claimed address, folded into a fixed set of buckets so a
+ *     client cannot manufacture unlimited identities by inventing addresses. It
+ *     is a fairness partition, not a security boundary; the ceilings that bound
+ *     spending are the daily quota and the Turnstile gate.
+ */
+export function callerIdentity(request: Request, options: { trustProxy?: boolean } = {}): CallerIdentity {
+  const trustProxy = options.trustProxy ?? process.env.TRUST_PROXY === '1';
+
+  const forwarded = request.headers.get('x-forwarded-for');
+  const hops = forwarded ? forwarded.split(',').map((hop) => hop.trim()).filter(Boolean) : [];
+  const claimed = request.headers.get('cf-connecting-ip')?.trim() ?? hops[hops.length - 1] ?? request.headers.get('x-real-ip')?.trim() ?? null;
+
+  if (!claimed) return { key: 'shared', source: 'shared', ip: null };
+  if (trustProxy) return { key: claimed, source: 'proxy', ip: claimed };
+  return { key: `claimed-${fnv1a(claimed) % CLAIMED_BUCKETS}`, source: 'claimed', ip: claimed };
+}
+
+/** The bucket key alone, for callers that do not need the provenance. */
+export function callerKey(request: Request): string {
+  return callerIdentity(request).key;
 }
 
 /** Test hook — never called by application code. */

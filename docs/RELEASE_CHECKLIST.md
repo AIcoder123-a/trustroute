@@ -42,7 +42,7 @@ read than MIT and has no legal review behind it.
 ## 1. Pre-flight on the machine
 
 ```bash
-npm run verify                  # typecheck, lint, 133 assertions, production build
+npm run verify                  # typecheck, lint, 153 assertions, production build
 npx playwright test             # 46 runs: 44 passing, 2 deliberate skips
 npm run accept:live             # live status, shape, verdict, data source — or the refusal
 ```
@@ -69,11 +69,14 @@ git log --all --oneline -- .env.local .env | head
 ```
 
 - [ ] No hit in the working tree, no hit in history, `.env.local` never tracked
-- [ ] `.gitignore` still covers `.env*`, `.next/`, `.local/`, `test-results/`, `playwright-report/`
+- [ ] `.gitignore` still covers `.env*`, `.next/`, `.local/`, `test-results/`, `playwright-report/`,
+      `.workbuddy/`
 - [ ] `.env.example` carries empty values only, and no real hostname or account id
+- [ ] `render.yaml` holds no secret: every credential is `sync: false` and is typed into the dashboard
 - [ ] `README.md`, `docs/*.md` and every screenshot are free of keys, tokens, emails and personal data
 - [ ] The key in `.env.local` is the one that stays local; the deployed value is set in the host's
       environment, **never** as `NEXT_PUBLIC_*` (that prefix would inline it into the browser bundle)
+- [ ] `.local/` (acceptance reports, provider diagnostics, the support email draft) is **not** committed
 - [ ] If any of the above ever failed, rotate the key at `clocked.rezolve.ai` before pushing
 
 ## 3. What the repository must contain

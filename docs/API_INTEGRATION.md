@@ -327,26 +327,36 @@ process, and records what came back in `.local/live-acceptance.json` (git-ignore
 
 Result on 2026-11-01, from this machine, no browser involved, `CLOCKED_MAX_ATTEMPTS=1`:
 
+**Run A — office network (morning).** Egress: the same machine's fixed line.
+
 | Endpoint | Category | HTTP | Latency | Response type | Verdict | Credits | `cf-ray` |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `POST /injection` | `timeout` | — | 10,680 ms | — | — (`ConnectionError`) | 0 | — |
 | `POST /pii` | `timeout` | — | 10,660 ms | — | — | 0 | — |
 | `POST /script` | `edge_challenge` | **403** | 728 ms | `text/html` | — (`PermissionDeniedError`) | 0 | `a5384d90de0f45f7-SEA` |
 
-The two timeouts are `fetch failed ← UND_ERR_CONNECT_TIMEOUT: Connect Timeout Error (attempted addresses:
-172.67.163.50:443, 104.21.65.122:443, timeout: 10000ms)` — both Cloudflare anycast addresses, no TCP
-connection, no TLS, no HTTP status, so nothing about the credential or the account. The third call, seconds
-later, reached the edge and was challenged. An earlier run the same evening produced the mirror image
-(two challenges with `-SEA` and one connect timeout), which is the point: **this network is unstable at the
-connect stage, and a run that reports one number for all three endpoints would describe the wrong fault.**
+**Run B — phone hotspot (afternoon, the network the demo would be judged from).** Egress confirmed as
+`[redacted]`, AS24445 China Mobile, by two independent clients before the run.
+
+| Endpoint | Category | HTTP | Latency | Response type | Verdict | Credits | `cf-ray` |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `POST /injection` | `timeout` | — | 10,758 ms | — | — (`ConnectionError`) | 0 | — |
+| `POST /pii` | `edge_challenge` | **403** | 997 ms | `text/html` | — (`PermissionDeniedError`) | 0 | `a538a4f8fbdc0da3-SEA` |
+| `POST /script` | `timeout` | — | 10,148 ms | — | — | 0 | — |
+
+The timeouts are `fetch failed ← UND_ERR_CONNECT_TIMEOUT: Connect Timeout Error (attempted addresses:
+104.21.65.122:443, 172.67.163.50:443, timeout: 10000ms)` — both Cloudflare anycast addresses, no TCP
+connection, no TLS, no HTTP status, so nothing about the credential or the account. The call that reached
+the edge was challenged. **Two different networks produced the same two failure shapes in the same order**,
+which is why the next question was not "which network" but "which client".
 
 **What this establishes.** When a request reaches the edge, it is refused before authentication and before
 billing (0 credits, `x-clocked-credits` absent), with an HTML challenge rather than a JSON error — not the
 key, not the body, not the method. When it does not reach the edge, there is no answer at all, and that is
 a property of the path, not of the API.
 
-**What it does not establish.** Why a browser from this machine reaches the API while Node does not.
-Three explanations survive; see §6.1. Nothing here discriminates between them.
+**What it does not establish.** Whether the rule keys on the TLS fingerprint, the HTTP/2 settings or
+something else about the client. §6.3.2 narrows it to "the client", not the address.
 
 **Why the script does not try to get past it.** Solving a managed challenge programmatically is exactly the
 kind of bypass the challenge exists to prevent, and an integration that depends on defeating a security
@@ -378,6 +388,34 @@ The product does not use an environment proxy: `fetch` in Node ignores `HTTP(S)_
 instance will behave like the direct probes above. `CLOCKED_PROXY` exists for a proxy-shaped network, and
 needs the optional `undici` package (`npm i -D undici`); it was not installed for these runs, so every
 number in §6.3 is a direct-connection number.
+
+#### 6.3.2 The same address, three clients — the refusal follows the client
+
+If the challenge were about the network or the account, every client from one address would be treated
+alike. On the hotspot, in one sitting, with **no credential in any of these requests**:
+
+| Client | Request | Result |
+| --- | --- | --- |
+| Node `fetch` (undici) | `GET /` ×4 | `403` + `cf-mitigated: challenge` + HTML "Just a moment…", ~0.97 s each, `cf-ray` all `-SEA` |
+| `curl` 8.x | `GET /` ×2 | `403` + `cf-mitigated: challenge`, ~1.15 s each |
+| Chromium (Playwright, no key) | `GET /` | **`200`**, `finalTitle: "Clocked — A frontier model for decisions and exact extraction."`, no challenge |
+
+Same public address (`[redacted]`), same minute, no cookie or session carried over, and the browser
+was not given a credential — it was only asked whether the page loads.
+
+**Interpretation.** The rule discriminates on *what the client looks like*, not on where it connects from.
+That is consistent with everything else observed: two different networks refused Node identically, while a
+browser from one of those networks passed. A datacenter egress does not change what the client looks like.
+
+**What this changes for the deployment.** Nothing about the product, and something important about the
+claim. A Render instance is a Node client on a different address, and the evidence says the address is not
+the variable — so "Render can host this app" must not be written as "Render can reach this API". The order
+stays: deploy simulated, measure from the host's own egress, switch to live only if a real verdict comes
+back. See `docs/RENDER.md` §7.
+
+**What would fix it.** A provider-side exemption for `/clocked/*` for requests that present an API key —
+which is the normal shape for an API endpoint and the reason the support email asks for exactly that. No
+change on this side, and nothing in this repository attempts to look like a browser.
 
 #### Transport knobs that were checked
 

@@ -112,9 +112,13 @@ detail is binding the port the host provides:
 ```bash
 # Render: build command
 npm ci && npm run build
-# Render: start command — use $PORT, not the local 3100
-npx next start -p $PORT
+# Render: start command — $PORT (default 10000) and 0.0.0.0, not the local 3100
+npx next start -H 0.0.0.0 -p $PORT
 ```
+
+`render.yaml` at the repository root encodes the whole service; **`docs/RENDER.md` is the operating manual**
+(limits read from Render's docs on 2026-11-01, the ephemeral-filesystem consequence, health check, cold
+start, and the two-step Turnstile enablement).
 
 The **cold start is the accepted cost**: after 15 minutes idle the instance sleeps and the next request
 takes about a minute. Two ways to soften it, neither required: an external uptime pinger every 10 minutes
@@ -238,31 +242,39 @@ exact, because there is exactly one `Map`. That is one more reason §4.1 prefers
 
 ### 5.2 A free stack that actually holds the balance
 
-Two controls, both free, neither requiring a purchase. Both are **recommended and not implemented**: they
-need an account and a decision from the owner, and adding an unexercised dependency to a working demo is
-its own risk (see §5.3).
+Two controls, both free, neither requiring a purchase. **Both are now implemented and unit-tested, and
+both are off until the owner configures them** — that is the intended state: the code ships, the accounts
+do not exist yet.
 
 **Layer 1 — Turnstile as the gate (free, no counter needed).** Cloudflare's free plan covers Turnstile with
-up to 20 widgets and **unlimited verifications**, and it works on any host without putting the site behind
-Cloudflare. The widget issues a single-use token that is valid for about five minutes; the server verifies
-it at `https://challenges.cloudflare.com/turnstile/v0/siteverify` with the secret, before spending a
-credit. One extra fetch (~100 ms) per screen stands between a script and the account balance — and unlike
-a counter it does not need shared state, so it behaves identically on one instance or twenty.
+**unlimited verifications**, and it works on any host without putting the site behind Cloudflare. The
+widget issues a single-use token valid for about five minutes; the server verifies it at
+`https://challenges.cloudflare.com/turnstile/v0/siteverify` with the secret, before spending a credit.
+One extra fetch (~100 ms) per screen stands between a script and the account balance — and unlike a
+counter it needs no shared state, so it behaves identically on one instance or twenty.
+
+Implemented in `lib/turnstile.ts`, with three details that are easy to skip:
+
+- **Replay is refused before verification.** A token dies at Cloudflare once verified, but two concurrent
+  replays can both reach `siteverify` first. The claim is a `SET … NX PX 300000` on the token's SHA-256
+  (Redis) or a bounded map (single process).
+- **An unreachable verifier is a refusal**, `503`, never a pass. A failed verification also releases the
+  claim, so a still-valid token is not burned by our outage.
+- **The token proves a human, not an identity.** It is never used as the caller key.
 
 **Layer 2 — a shared atomic counter for the hard ceiling.** Upstash Redis over HTTPS (REST) is the usual
-free choice for serverless: one database, 256 MB, **500,000 commands/month** (≈16,000/day), no credit card,
-and no TCP connection to manage. The daily ceiling becomes three commands per screen:
+free choice: one database, 256 MB, **500,000 commands/month** (≈16,000/day), no credit card. The whole
+daily ceiling is **one** round trip — a Lua script, so the increment and the expiry are atomic:
 
 ```
-INCR trustroute:screen:<UTC-day>        → n
-EXPIRE trustroute:screen:<UTC-day> 90000   (only when n = 1)
-if n > DAILY_SCREENS → refuse with 429, do not call Clocked
+EVAL "local n = redis.call('INCR',KEYS[1]); if n == 1 then redis.call('EXPIRE',KEYS[1],ARGV[1]) end;
+      if n > tonumber(ARGV[2]) then return {n,0} end; return {n,1}"
+     1 trustroute:quota:<UTC-day> <seconds-to-midnight> <DAILY_SCREENS>
 ```
 
 Fail **closed** on a Redis error: the ceiling exists to protect money, and "the limiter is down" must not
-mean "spend freely". The per-IP window is the same pattern with a 300 s TTL. Budget: 40 screens/day is
-~120 commands/day, so the free tier is two orders of magnitude larger than the demo needs — the ceiling is
-the point, not the quota.
+mean "spend freely". Implemented in `lib/quota.ts`; budget is ~1 command/screen, three orders of magnitude
+inside the free tier, because the ceiling is the point and not the quota.
 
 **Layer 3 — the edge, if there is one.** Cloudflare's free plan includes a single rate-limiting rule with a
 10-second window. It is worth configuring only if the demo already sits behind Cloudflare; it is not worth
@@ -275,14 +287,16 @@ is the design — a bounded loss of one day's budget, not an unbounded one.
 
 | Control | Status | Where |
 | --- | --- | --- |
-| Per-IP window, per-caller concurrency, daily ceiling | **implemented, in process memory** | `lib/ratelimit.ts`, `lib/admission.ts` |
+| Per-caller window, per-caller concurrency | **implemented, in process memory** (exact on Render's single instance) | `lib/ratelimit.ts`, `lib/admission.ts` |
+| Daily ceiling | **implemented**, memory by default, **Redis when configured** | `lib/quota.ts` |
+| Turnstile verification + replay guard | **implemented server-side, off by default** — the browser widget is not shipped, so enabling it without one would refuse every screening | `lib/turnstile.ts`, `docs/RENDER.md` §5 |
 | Same-origin refusal, body cap, input caps, generic errors | **implemented** | `lib/origin.ts`, `app/api/analyze/route.ts` |
-| Turnstile gate | **not implemented** — needs a Cloudflare account and a decision on the extra failure mode | §5.2 layer 1 |
-| Shared counter (Upstash/KV) | **not implemented** — needs an account and a fail-closed policy the owner accepts | §5.2 layer 2 |
+| Caller identity that does not trust a client-written header | **implemented** — `TRUST_PROXY` decides whether `x-forwarded-for` is believed; otherwise claimed addresses fold into 64 buckets | `lib/ratelimit.ts` |
+| Shared counter (Upstash) | **implemented, unconfigured** — needs the two env vars | `lib/quota.ts` |
 
-Until one of the two shared controls exists, the honest deployment rule is: **run exactly one instance**,
-keep `DAILY_SCREENS` at 40 or below, and watch `X-Daily-Remaining`. On a host that scales out, the
-in-memory ceiling is a speed bump, not a limit.
+Until Redis is configured, the honest deployment rule stands: **run exactly one instance** (Render's free
+tier is always one), keep `DAILY_SCREENS` at 40 or below, and watch `X-Daily-Remaining`. On a host that
+scales out, the in-memory ceiling is a speed bump, not a limit.
 
 ## 6. Pre-flight checklist (for whenever the owner authorises it)
 

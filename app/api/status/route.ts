@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
-import { LIMITS, hasApiKey, resolveRunMode } from '@/lib/config';
+import { ABUSE, LIMITS, hasApiKey, resolveRunMode, turnstileState } from '@/lib/config';
+import { quotaStore } from '@/lib/quota';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -33,15 +34,20 @@ export async function GET() {
         concurrentPerCaller: LIMITS.concurrentPerCaller,
       },
       /**
-       * Published on purpose: the counters live in this process. On one instance
-       * the daily ceiling is exact; on a host that runs several it is
-       * `instances × dailyScreens`, and a cold start resets it. Saying so here
-       * stops an operator from reading the limit as a deployment-wide promise.
-       * See docs/SECURITY_NOTES.md §12 and docs/DEPLOYMENT.md §5.2.
+       * Published on purpose: the daily counter is the only ceiling that bounds
+       * the credit balance, so an operator has to be able to see where it lives.
+       * `redis` means the ceiling is shared by every instance and survives a
+       * restart; `memory` means `instances × dailyScreens` and a cold start
+       * resets it. Saying so here stops the limit being read as a promise it
+       * cannot keep. See docs/SECURITY_NOTES.md §12.
        */
       admission: {
-        store: 'in-memory',
-        sharedAcrossInstances: false,
+        store: quotaStore(),
+        sharedAcrossInstances: quotaStore() === 'redis',
+        /** `off` | `required` | `misconfigured` — the human-check gate. */
+        turnstile: turnstileState(),
+        /** Whether `x-forwarded-for` is believed; false on a direct-to-origin deploy. */
+        trustProxy: ABUSE.trustProxy,
       },
     },
     { headers: { 'Cache-Control': 'no-store' } },

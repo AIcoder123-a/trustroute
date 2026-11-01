@@ -41,7 +41,11 @@ lib/
   audit.ts              in-memory, content-free audit + review events
   config.ts             server-only config, limits, thresholds
   validate.ts           request validation
-  ratelimit.ts          per-IP fixed window
+  ratelimit.ts          per-caller fixed window + caller identity (TRUST_PROXY decides trust)
+  admission.ts          window → concurrency → daily quota, in that order
+  quota.ts              daily ceiling: memory, or one atomic Redis EVAL when configured; fail-closed
+  turnstile.ts          server-side human-check verification + single-use token claims
+  redis-rest.ts         minimal REST client for a Redis-compatible endpoint (Upstash shape)
 tests/                  vitest unit + integration
 tests/fixtures/         verbatim real responses recorded 2026-10-30 (synthetic samples only)
 e2e/                    playwright, desktop + mobile
@@ -107,12 +111,12 @@ Playwright downloads browsers once: `npx playwright install chromium`.
 | Area | State |
 | --- | --- |
 | Build, typecheck, lint | clean, 0 warnings |
-| Unit/integration tests | 133 passing (17 files, incl. contract tests against recorded real responses, a policy-trace suite, a credential-hygiene suite, and guards for origin, admission and HTTP limits) |
+| Unit/integration tests | 153 passing (20 files, incl. contract tests against recorded real responses, a policy-trace suite, a credential-hygiene suite, guards for origin/admission/HTTP limits, and the quota, Turnstile and caller-identity suites) |
 | Browser tests | 44 passing, 2 deliberate skips (23 scenarios × desktop + mobile) |
 | Live Clocked detections | **verified 2026-10-30 through a browser**: `/injection` 0.9957 critical, `/pii` 6 entities incl. both custom kinds, `/script` 0.9948 malicious. 12 credits / $0.0024 per full screen |
-| Live path from the server | **refused, and partly unreachable**: `403 cf-mitigated: challenge` from the edge before authentication on the calls that connect, `UND_ERR_CONNECT_TIMEOUT` on the calls that do not (2026-11-01, `docs/API_INTEGRATION.md` §6.3). Both end in `Screening unavailable` |
-| Rate limiting | in-process `Map`s only — exact on one instance, `N ×` on many (`docs/SECURITY_NOTES.md` §12) |
-| Deployment | not deployed; host comparison, the Vercel-clause analysis and the free shared-counter design are in `docs/DEPLOYMENT.md` §4–5 |
+| Live path from the server | **refused on two networks, and the refusal follows the client**: `403 cf-mitigated: challenge` before authentication on the calls that connect, `UND_ERR_CONNECT_TIMEOUT` on the calls that do not; from one public IP, Node and `curl` are challenged while Chromium gets `200` (`docs/API_INTEGRATION.md` §6.3, §6.3.2). All end in `Screening unavailable` |
+| Rate limiting | window + concurrency in-process (exact: Render free is one instance); daily ceiling in-process by default, **Redis when `UPSTASH_REDIS_REST_*` is set** (one atomic `EVAL`, fail-closed); Turnstile verification implemented but **off**, because the browser widget is not shipped (`docs/RENDER.md` §5) |
+| Deployment | not deployed. Render Free chosen; `render.yaml` + `docs/RENDER.md` are the blueprint and the manual |
 | Git remote | none; local commits only |
 
 Open items and blockers are tracked in `docs/IMPLEMENTATION_PLAN.md` §6–7.

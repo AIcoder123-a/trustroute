@@ -154,13 +154,15 @@ Every name, address, phone number and domain is fictional (`example.com`, `examp
 ## Architecture
 
 ```
-app/api/analyze      rate limit → validate → Detect (parallel) → Mask → Decide → Audit
+app/api/analyze      origin → body cap → human check → admit → validate → Detect (parallel) → Mask → Decide → Audit
 lib/clocked/live     clocked-sdk; the only place the key is read
 lib/clocked/mock     labelled heuristic simulator — never presented as Clocked output
 lib/clocked/normalize  defensive parsing: an untrustworthy shape becomes 'invalid', not 'safe'
 lib/redact           rebuilds the masked copy from spans (bounds, re-anchor, surrogate-safe, overlap-safe)
 lib/policy           pure decision engine, no I/O, unit-tested; also reports where screening was unavailable
 lib/admission        per-caller window + concurrency + a whole-deployment daily ceiling
+lib/quota            the day ceiling: memory, or one atomic Redis EVAL; fail-closed when unreadable
+lib/turnstile        server-side human-check verification and single-use token claims (off by default)
 lib/origin           same-origin enforcement for the two POST routes (no CORS headers are ever emitted)
 lib/report           pure export builder: no raw text, no entity values, no overlapping evidence
 lib/copy             mode-aware wording: a sentence about Clocked can only exist in live mode
@@ -187,7 +189,7 @@ lib/copy             mode-aware wording: a sentence about Clocked can only exist
 
 | Layer | Count | Command |
 | --- | --- | --- |
-| Unit / integration (vitest) | 133 assertions in 17 files | `npm test` |
+| Unit / integration (vitest) | 153 assertions in 20 files | `npm test` |
 | Browser (Playwright, desktop + mobile) | 46 runs (23 scenarios × 2 viewports), 44 passing, 2 deliberate skips | `npm run test:e2e` |
 
 The browser suite walks the real flow: load a case → screen → read the decision → inspect the masked copy →
@@ -219,22 +221,25 @@ approve → export JSON → print sheet, at 1440×900 and 390×844. Details and 
   browser, a rotated key: of three calls, one reached the edge and was challenged (`403`, `text/html`,
   `-SEA`, 0 credits, 0.7 s), and two never connected at all (`UND_ERR_CONNECT_TIMEOUT` after 10.7 s, both
   Cloudflare anycast addresses). The script reports those as different categories, because they are
-  different problems.
-  *Why* a browser passes where Node does not has not been established; `docs/API_INTEGRATION.md` §6.1
-  lists the observations and the three hypotheses that survive them. On this machine
-  `CLOCKED_MODE=live` therefore reports `edge_interstitial` and holds the content with
-  `Screening unavailable — manual review required` — never PASS, and never a simulated number dressed as
-  a live one. Exempting `/clocked/*` from the browser-integrity challenge is a provider-side change.
+  different problems. Repeated on a phone hotspot: the same two shapes, in the same order.
+  **The discriminator is the client, not the address.** In one sitting, from one public IP with no
+  credential: Node `403 challenge` ×4, `curl` `403 challenge` ×2, Chromium **`200`** with the real page.
+  So a different host will not fix it — only a provider-side exemption for `/clocked/*` will
+  (`docs/API_INTEGRATION.md` §6.3.2). On this machine `CLOCKED_MODE=live` therefore reports
+  `edge_interstitial` and holds the content with `Screening unavailable — manual review required` — never
+  PASS, and never a simulated number dressed as a live one.
 - **The simulated mode is labelled as such everywhere**, on purpose and on every surface: a
   `DEMO · SIMULATED RESULTS` banner with an expandable explanation, a `SIMULATED` tag per stage card
   (and on the evidence list), a `SIMULATED` badge in the header, and `dataSources` / `disclaimers` / the printable sheet in the export.
   It exists so the review flow can be exercised without a key, and it is never presented as Clocked
   output. There is no code path that falls back to it after a failed live call.
 - The simulated detector is a heuristic simulator, not a detector.
-- The audit trail and the abuse controls are per-process and in-memory. On one instance that is exact; on a
-  host that runs several, the daily ceiling becomes `instances × DAILY_SCREENS` and a cold start resets it
-  (`docs/SECURITY_NOTES.md` §12). The free fix — a Turnstile gate plus a shared counter — is specified in
-  `docs/DEPLOYMENT.md` §5.2 but not implemented; until then the rule is one instance and
+- The audit trail and the per-caller window/concurrency counters are in process memory. On one instance
+  that is exact; on a host that runs several, the window becomes `instances × requestsPerWindow` and a cold
+  start resets it (`docs/SECURITY_NOTES.md` §12). The daily ceiling can be moved to Redis
+  (`UPSTASH_REDIS_REST_*`, one atomic `EVAL`, fail-closed) and the human check to Turnstile
+  (`TURNSTILE_*`); both ship in `lib/`, both are off until configured, and the Turnstile half still needs
+  the browser widget (`docs/RENDER.md` §5). Until either is on, the rule is one instance and
   `DAILY_SCREENS ≤ 40`.
 - The same-origin check stops other *pages*, not other *clients*: it is a browser rule, never a limiter.
 - No authentication. A public deployment needs a gate in front of it, or a very small daily budget.
@@ -252,6 +257,8 @@ approve → export JSON → print sheet, at 1440×900 and 390×844. Details and 
 | `docs/TEST_REPORT.md` | test matrix, results, evidence |
 | `docs/SECURITY_NOTES.md` | threat model, data retention, deliberate weaknesses |
 | `docs/DEPLOYMENT.md` | what a deploy needs, why a cloud host may hit the same 403, and the two cheap ways to find out before deploying |
+| `docs/RENDER.md` | the chosen host: free-plan limits read from Render's docs, the blueprint, the cold start, and the rule for switching to live |
+| `docs/RELEASE_CHECKLIST.md` | secret scan, what ships, and the ordered launch runbook |
 | `docs/SUBMISSION_DRAFT.md` | entry-form copy and video script |
 | `AGENTS.md` | rules for continuing the work |
 

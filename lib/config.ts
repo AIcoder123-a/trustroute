@@ -54,6 +54,35 @@ export const LIMITS = {
   concurrentPerCaller: 2,
 } as const;
 
+/**
+ * Abuse-control configuration that is allowed to be public, plus the switches
+ * that decide whether the optional gates are on at all. Nothing here is a
+ * secret: the Turnstile site key is public by design (the widget needs it), and
+ * the secret is only ever read by `lib/turnstile.ts` on the server.
+ */
+export const ABUSE = {
+  /**
+   * Whether `x-forwarded-for` may be believed. Only true when the deployment sits
+   * behind an edge that rewrites the header (Render, Vercel, a reverse proxy).
+   * See `callerIdentity()` in `lib/ratelimit.ts`.
+   */
+  trustProxy: (process.env.TRUST_PROXY ?? '').trim() === '1',
+  turnstile: {
+    /** The gate is opt-in: a demo without a site key must still run. */
+    enabled: (process.env.TURNSTILE_ENABLED ?? '').trim().toLowerCase() === 'true',
+    siteKey: process.env.TURNSTILE_SITE_KEY?.trim() ?? '',
+  },
+} as const;
+
+/**
+ * `required` when the gate is on and has a secret, `misconfigured` when it is on
+ * without one (the route refuses every screening in that state), `off` otherwise.
+ */
+export function turnstileState(): 'required' | 'misconfigured' | 'off' {
+  if (!ABUSE.turnstile.enabled) return 'off';
+  return (process.env.TURNSTILE_SECRET?.trim() ?? '').length > 0 ? 'required' : 'misconfigured';
+}
+
 export function maxCharactersFor(contentType: ContentType): number {
   return contentType === 'script' ? LIMITS.scriptCharacters : LIMITS.proseCharacters;
 }

@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
 
 import { admit, release } from '@/lib/admission';
-import { ConfigurationError, LIMITS, hasApiKey } from '@/lib/config';
+import { ConfigurationError, LIMITS, hasApiKey, turnstileState } from '@/lib/config';
 import { checkOrigin } from '@/lib/origin';
 import { analyze } from '@/lib/pipeline';
-import { callerKey } from '@/lib/ratelimit';
+import { callerIdentity } from '@/lib/ratelimit';
+import { verifyTurnstile } from '@/lib/turnstile';
 import { validateAnalyzeInput } from '@/lib/validate';
 
 export const runtime = 'nodejs';
@@ -32,6 +33,47 @@ function rateLimited(reason: string, retryAfterSeconds: number, dailyRemaining: 
   );
 }
 
+/**
+ * The Turnstile gate, when it is on.
+ *
+ * `disabled` is a pass-through so a deployment without a site key behaves as it
+ * did before. Everything else is a refusal:
+ *
+ *   - missing / replayed / rejected → `403 challenge_required`, which is what the
+ *     widget's callback needs to see;
+ *   - verifier unreachable, or the gate switched on without a secret → `503`,
+ *     because "we could not check" must not become "we assume it was fine".
+ */
+async function turnstileGate(request: Request, remoteIp: string | null): Promise<NextResponse | null> {
+  if (turnstileState() === 'off') return null;
+
+  const result = await verifyTurnstile(request.headers.get('x-turnstile-token'), { remoteIp });
+
+  if (result.ok) return null;
+
+  if (result.reason === 'verifier_unavailable' || result.reason === 'misconfigured') {
+    return NextResponse.json(
+      {
+        error: 'verification_unavailable',
+        message:
+          'The human-check could not be completed, so nothing was screened. This is a deliberate refusal, not a credential problem.',
+      },
+      { status: 503, headers: { 'Cache-Control': 'no-store', 'Retry-After': '30' } },
+    );
+  }
+
+  return NextResponse.json(
+    {
+      error: 'challenge_required',
+      message:
+        result.reason === 'replayed'
+          ? 'That human-check token has already been used. Complete the check again.'
+          : 'A completed human-check is required before screening. Nothing was sent to the API.',
+    },
+    { status: 403, headers: { 'Cache-Control': 'no-store' } },
+  );
+}
+
 export async function POST(request: Request) {
   const origin = checkOrigin(request);
   if (!origin.ok) {
@@ -54,11 +96,28 @@ export async function POST(request: Request) {
     );
   }
 
-  const key = callerKey(request);
-  const admission = admit(key);
+  const identity = callerIdentity(request);
+
+  // Before any counter: a caller without a valid human-check token must not be
+  // able to spend the deployment's window, let alone its credits.
+  const challenge = await turnstileGate(request, identity.ip);
+  if (challenge) return challenge;
+
+  const admission = await admit(identity.key);
   if (!admission.allowed) {
+    if (admission.reason === 'quota_unavailable') {
+      return NextResponse.json(
+        {
+          error: 'quota_unavailable',
+          message:
+            'The screening budget could not be checked, so nothing was screened. This is a deliberate refusal: an unknown budget is treated as no budget.',
+        },
+        { status: 503, headers: { 'Cache-Control': 'no-store', 'Retry-After': '30' } },
+      );
+    }
     return rateLimited(admission.reason ?? 'window', admission.retryAfterSeconds, admission.dailyRemaining);
   }
+  const key = identity.key;
 
   try {
     let raw: string;

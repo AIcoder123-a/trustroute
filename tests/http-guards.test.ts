@@ -58,7 +58,8 @@ describe('HTTP guards on the public routes', () => {
   });
 
   it('answers 429 once the caller has used its window', async () => {
-    for (let index = 0; index < LIMITS.requestsPerWindow; index += 1) checkRateLimit('local');
+    // No edge headers in this request, so the caller lands in the shared bucket.
+    for (let index = 0; index < LIMITS.requestsPerWindow; index += 1) checkRateLimit('shared');
     const response = await analyzePost(post('/api/analyze', JSON.stringify({ text: 'x', contentType: 'support_ticket' })));
     expect(response.status).toBe(429);
     expect(response.headers.get('Retry-After')).not.toBeNull();
@@ -68,7 +69,12 @@ describe('HTTP guards on the public routes', () => {
     const body = (await (await statusGet()).json()) as Record<string, unknown>;
     const serialised = JSON.stringify(body);
 
-    expect(body.admission).toEqual({ store: 'in-memory', sharedAcrossInstances: false });
+    expect(body.admission).toEqual({
+      store: 'memory',
+      sharedAcrossInstances: false,
+      turnstile: 'off',
+      trustProxy: false,
+    });
     expect((body.limits as Record<string, number>).dailyScreens).toBe(LIMITS.dailyScreens);
     expect(serialised).not.toMatch(/CLOCKED_API_KEY|bearer|api[_-]?key/i);
   });
