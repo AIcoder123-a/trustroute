@@ -112,7 +112,7 @@ frame to aim for is `docs/screenshots/screening-unavailable.png` — the `Unavai
 
 | # | Time | Action | Must be legible |
 | --- | --- | --- | --- |
-| 1 | 0:00 | idle workbench | H1, mode pill, case rail |
+| 1 | 0:00 | idle workbench | H1, mode pill, sample-case chips |
 | 2 | 0:10 | *Screen the blocked example* | BLOCK badge, injection %, evidence list |
 | 3 | 0:18 | click an evidence passage | highlight in the source view, `L<n>` in the row |
 | 4 | 0:35 | PII case → Forwarded copy | `<PERSON>`, `<PHONE>`, `<EMAIL>`, `<CARD>` |
@@ -124,5 +124,5 @@ frame to aim for is `docs/screenshots/screening-unavailable.png` — the `Unavai
 
 ## If a judge asks for a 30-second version
 
-Scenes 2 and 5 only: block an injection, then show the export. The decision panel and the report between
+Scenes 2 and 5 only: block an injection, then show the export. The decision band and the report between
 them carry the whole argument.

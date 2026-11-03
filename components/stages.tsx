@@ -7,100 +7,134 @@ import { STAGE_STATUS_LABELS } from '@/lib/types';
 import { ms, pct } from '@/lib/format';
 import { isHighSensitivity } from '@/lib/redact';
 import { stageBadge, thresholdCaption } from '@/lib/copy';
-import { AlertIcon, CodeIcon, LockIcon, ScanIcon } from '@/components/icons';
-import { EmptyHint, ProbabilityMeter } from '@/components/ui';
+import { AlertIcon, ChevronRightIcon, LockIcon, ScanIcon, CodeIcon } from '@/components/icons';
+import { ProbabilityMeter, StatusDot } from '@/components/ui';
 
-function StageShell({
+/**
+ * One detection, one row.
+ *
+ * A completed stage shows its conclusion in the row and puts every number one
+ * click away. A failed stage opens by itself in effect: the consequence is
+ * stated in the row, because "we could not check" must never look like a
+ * quiet success.
+ */
+function StageRow({
   title,
   endpoint,
   icon,
   stage,
-  children,
+  metric,
   aside,
+  children,
 }: {
   title: string;
   endpoint: string;
   icon: ReactNode;
   stage: StageResult<unknown>;
-  children: ReactNode;
+  metric: ReactNode;
   aside?: ReactNode;
+  children: ReactNode;
 }) {
-  return (
-    <article className="panel overflow-hidden">
-      <header className="flex items-center gap-2.5 px-3.5 py-2.5">
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-line bg-panel-2 text-fg-2">
+  // `skipped` is not a failure: nothing was expected to run. It still opens to
+  // its own explanation, but it must not borrow the failure language.
+  const skipped = stage.status === 'skipped';
+  const failed = stage.status !== 'ok' && !skipped;
+
+  const head = (
+    <>
+      <StatusDot status={stage.status} />
+      <span className="flex min-w-0 items-center gap-2">
+        <span className="shrink-0 text-fg-3" aria-hidden="true">
           {icon}
         </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-1.5">
-            <h3 className="text-[13px] font-semibold tracking-tight text-fg">{title}</h3>
-            {/* On a 390px viewport the endpoint squeezes the title into three lines. */}
-            <span className="mono hidden text-[10.5px] text-fg-3 sm:inline">{endpoint}</span>
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {aside}
-          <span className="mono text-[10.5px] text-fg-3">{ms(stage.latencyMs)}</span>
-          <span
-            className={`rounded border px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-[0.08em] ${
-              stage.mode === 'live'
-                ? 'border-[#1d5745] bg-[#0d2720] text-pass'
-                : 'border-[#5a4a1c] bg-[#26200f] text-review'
-            }`}
-            title={stage.mode === 'live' ? 'Response from the Clocked API' : 'Produced locally — no API request'}
-          >
-            {stageBadge(stage.mode)}
-          </span>
-        </div>
-      </header>
+        <span className="truncate text-[13px] font-medium text-fg">{title}</span>
+        <span className="mono hidden shrink-0 text-[10.5px] text-fg-3 md:inline">{endpoint}</span>
+      </span>
 
-      {stage.status !== 'ok' ? (
-        <div className="flex gap-2.5 border-t border-line px-3.5 py-3">
-          <AlertIcon size={15} className="mt-0.5 shrink-0 text-block" />
+      <span className="ml-auto flex shrink-0 items-center gap-2">
+        {aside}
+        <span className="text-[12px] text-fg-2">{metric}</span>
+        {skipped ? null : (
+          <>
+            <span className="mono hidden text-[10.5px] text-fg-3 sm:inline">{ms(stage.latencyMs)}</span>
+            <span
+              className={`hidden rounded border px-1.5 py-px text-[9px] font-semibold uppercase tracking-[0.06em] sm:inline ${
+                stage.mode === 'live'
+                  ? 'border-pass-line bg-pass-soft text-pass'
+                  : 'border-review-line bg-review-soft text-review'
+              }`}
+              title={stage.mode === 'live' ? 'Response from the Clocked API' : 'Produced locally — no API request'}
+            >
+              {stageBadge(stage.mode)}
+            </span>
+          </>
+        )}
+      </span>
+    </>
+  );
+
+  // A failed stage cannot be collapsed: the consequence is the point of the
+  // row, and a closed disclosure would leave only a red dot to explain it.
+  if (failed) {
+    return (
+      <div>
+        <div className="flex items-center gap-3 px-4 py-2.5">{head}</div>
+        <div className="flex gap-2.5 border-t border-line bg-surface-2/60 px-4 py-3">
+          <AlertIcon size={14} className="mt-0.5 shrink-0 text-block" />
           <div className="min-w-0">
             <div className="text-[12.5px] font-medium text-fg">
               {STAGE_STATUS_LABELS[stage.status]}
               {stage.error?.code ? <span className="mono ml-1.5 text-[10.5px] text-fg-3">{stage.error.code}</span> : null}
             </div>
             <p className="mt-1 text-[12px] leading-relaxed text-fg-2">{stage.error?.message ?? 'No result was returned.'}</p>
-            <p className="mt-1.5 text-[11.5px] leading-relaxed text-fg-3">
+            <p className="mt-1 text-[11.5px] leading-relaxed text-fg-3">
               Policy consequence: this stage contributed nothing, so the run reports{' '}
-              <span className="text-[#f0c48a]">screening unavailable</span> and is held for manual review. No pass can
-              come from a missing result.
+              <span className="text-review">screening unavailable</span> and is held for manual review.
             </p>
           </div>
         </div>
-      ) : (
-        <div className="border-t border-line px-3.5 py-3">{children}</div>
-      )}
-    </article>
+      </div>
+    );
+  }
+
+  return (
+    <details className="group">
+      <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-2.5 hover:bg-surface-2">
+        {head}
+        <ChevronRightIcon
+          size={13}
+          className="chev shrink-0 text-fg-3 transition-transform group-open:rotate-90"
+          aria-hidden="true"
+        />
+      </summary>
+      <div className="border-t border-line px-4 py-3.5">{children}</div>
+    </details>
   );
 }
 
 function VerdictChip({ verdict }: { verdict: string }) {
   const tone =
     verdict === 'injection' || verdict === 'malicious'
-      ? 'border-[#6d2a30] bg-[#2c1216] text-block'
+      ? 'border-block-line bg-block-soft text-block'
       : verdict === 'suspicious'
-        ? 'border-[#6b5320] bg-[#2a2110] text-review'
-        : 'border-[#1d5745] bg-[#0d2720] text-pass';
+        ? 'border-review-line bg-review-soft text-review'
+        : 'border-pass-line bg-pass-soft text-pass';
   return (
-    <span className={`inline-flex items-center rounded border px-2 py-[3px] text-[11px] font-medium ${tone}`}>
+    <span className={`hidden rounded border px-1.5 py-[2px] text-[10.5px] font-medium sm:inline ${tone}`}>
       {verdict}
     </span>
   );
 }
 
-/** "3 passages — listed under Evidence" pointer, so the list lives in one place. */
+/** A pointer, not a second copy of the list. */
 function EvidencePointer({ count, noun }: { count: number; noun: string }) {
   return (
-    <p className="flex items-center gap-1.5 text-[11.5px] text-fg-3">
-      <span className="mono text-fg-2">{count}</span>
-      {count === 1 ? noun : `${noun}s`} — every one is listed under{' '}
-      <a href="#evidence" className="text-accent underline decoration-dotted underline-offset-2">
+    <p className="text-[11.5px] text-fg-3">
+      <span className="mono text-fg-2">{count}</span> {count === 1 ? noun : `${noun}s`} — every one is listed under{' '}
+      <a href="#evidence" className="text-accent underline decoration-accent/40 underline-offset-2 hover:decoration-accent">
         Evidence
       </a>
-      , where a click locates it in the source.
+      .
     </p>
   );
 }
@@ -115,64 +149,53 @@ export function GuardCard({
   const data = stage.data;
 
   return (
-    <StageShell
+    <StageRow
       title="Guard · prompt injection"
       endpoint="POST /injection"
-      icon={<ScanIcon size={14} />}
+      icon={<ScanIcon size={13} />}
       stage={stage}
       aside={data ? <VerdictChip verdict={data.verdict} /> : undefined}
+      metric={stage.status === 'skipped' ? 'not requested' : data ? pct(data.injection) : '—'}
     >
       {!data ? (
-        <EmptyHint>No Guard result.</EmptyHint>
+        <p className="text-[12px] text-fg-3">No Guard result.</p>
       ) : (
-        <div className="space-y-2.5">
-          <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
-            <div>
-              <div className="label">Injection probability</div>
-              <div className="mt-0.5 flex items-baseline gap-2">
-                <span className="text-[27px] font-semibold leading-none tracking-tight text-fg">
-                  {pct(data.injection)}
-                </span>
-                <span className="text-[12px] text-fg-3">
-                  {data.severity ? `severity ${data.severity}` : 'no severity returned'}
-                </span>
-              </div>
-            </div>
-            {data.category ? (
-              <div className="max-w-[46%] text-right">
-                <div className="label">Top category</div>
-                <div className="mt-0.5 truncate text-[12px] text-fg-2" title={data.category}>
-                  {data.category}
-                </div>
-              </div>
-            ) : null}
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <span className="text-[24px] font-semibold leading-none tracking-tight text-fg">{pct(data.injection)}</span>
+            <span className="text-[12px] text-fg-3">
+              {data.severity ? `severity ${data.severity}` : 'no severity returned'}
+              {data.category ? ` · ${data.category}` : ''}
+            </span>
           </div>
 
-          <ProbabilityMeter
-            value={data.injection}
-            threshold={data.threshold}
-            blockAt={thresholds.blockInjectionProbability}
-            tone={data.injection >= data.threshold ? 'block' : 'review'}
-            thresholdLabel={thresholdCaption(stage.mode)}
-          />
-          <div className="flex justify-between text-[10.5px] text-fg-3">
-            <span>
-              {thresholdCaption(stage.mode)} {pct(data.threshold, 0)}
-            </span>
-            <span>policy block {pct(thresholds.blockInjectionProbability, 0)}</span>
+          <div className="space-y-1.5">
+            <ProbabilityMeter
+              value={data.injection}
+              threshold={data.threshold}
+              blockAt={thresholds.blockInjectionProbability}
+              tone={data.injection >= data.threshold ? 'block' : 'review'}
+              thresholdLabel={thresholdCaption(stage.mode)}
+            />
+            <div className="flex justify-between text-[10.5px] text-fg-3">
+              <span>
+                {thresholdCaption(stage.mode)} {pct(data.threshold, 0)}
+              </span>
+              <span>policy block {pct(thresholds.blockInjectionProbability, 0)}</span>
+            </div>
           </div>
 
           {data.evidence.length > 0 ? (
             <EvidencePointer count={data.evidence.length} noun="passage" />
           ) : (
             <p className="text-[11.5px] leading-relaxed text-fg-3">
-              No evidence passage was returned. That is not proof the content is safe — Guard is a detector, not an
-              enforcement boundary.
+              No evidence passage was returned — which is not proof of safety. Guard is a detector, not an enforcement
+              boundary.
             </p>
           )}
         </div>
       )}
-    </StageShell>
+    </StageRow>
   );
 }
 
@@ -187,46 +210,39 @@ export function ProtectCard({
 }) {
   const data = stage.data;
   const counts = data ? Object.entries(data.counts).sort((a, b) => b[1] - a[1]) : [];
+  const total = data?.entities.length ?? 0;
 
   return (
-    <StageShell
+    <StageRow
       title="Protect · personal data"
       endpoint="POST /pii"
-      icon={<LockIcon size={14} />}
+      icon={<LockIcon size={13} />}
       stage={stage}
-      aside={
-        data ? (
-          <span className="chip h-[22px] px-2 text-[10.5px]">
-            {data.entities.length} {data.entities.length === 1 ? 'entity' : 'entities'}
-          </span>
-        ) : undefined
-      }
+      metric={stage.status === 'skipped' ? 'not requested' : data ? total === 0 ? 'none found' : `${total} ${total === 1 ? 'entity' : 'entities'}` : '—'}
     >
       {!data ? (
-        <EmptyHint>No Protect result.</EmptyHint>
-      ) : data.entities.length === 0 ? (
+        <p className="text-[12px] text-fg-3">No Protect result.</p>
+      ) : total === 0 ? (
         <p className="text-[12px] leading-relaxed text-fg-2">
           No personal data was found in this content. Protect can still miss data — masking applies to the findings
           returned, not to every possible sensitive fact.
         </p>
       ) : (
-        <div className="space-y-2.5">
+        <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-1.5">
             {counts.map(([kind, count]) => (
               <span
                 key={kind}
-                className={`chip h-[24px] ${
-                  isHighSensitivity(kind) ? 'border-[#6b5320] bg-[#2a2110] text-[#f0c48a]' : ''
-                }`}
+                className={`tag ${isHighSensitivity(kind) ? 'border-review-line bg-review-soft text-review' : ''}`}
               >
                 <span className="mono text-[11px]">{kind}</span>
-                <span className="text-[10.5px] text-fg-3">×{count}</span>
+                <span className="text-[10.5px] opacity-70">×{count}</span>
               </span>
             ))}
             <button
               type="button"
               onClick={onToggleReveal}
-              className="btn btn-quiet ml-auto h-6 px-2 text-[11px]"
+              className="btn btn-ghost btn-sm ml-auto"
               aria-pressed={reveal}
             >
               {reveal ? 'Hide values' : 'Show values'}
@@ -236,45 +252,41 @@ export function ProtectCard({
           <div className="overflow-hidden rounded-lg border border-line">
             <table className="w-full table-fixed border-collapse text-left">
               <thead>
-                <tr className="bg-panel-2 text-[10px] uppercase tracking-[0.07em] text-fg-3">
-                  <th className="w-[28%] px-2 py-1.5 font-semibold">Kind</th>
-                  <th className="px-2 py-1.5 font-semibold">Matched value</th>
-                  <th className="w-[23%] px-2 py-1.5 font-semibold">Offsets</th>
+                <tr className="bg-surface-2 text-[10px] uppercase tracking-[0.06em] text-fg-3">
+                  <th className="w-[30%] px-2.5 py-1.5 font-semibold">Kind</th>
+                  <th className="px-2.5 py-1.5 font-semibold">Matched value</th>
+                  <th className="w-[22%] px-2.5 py-1.5 font-semibold">Offsets</th>
                 </tr>
               </thead>
               <tbody>
                 {data.entities.slice(0, 10).map((entity, index) => (
                   <tr key={`${entity.start}-${index}`} className="border-t border-line align-top">
-                    <td className="px-2 py-1.5">
-                      <span
-                        className={`mono text-[11px] ${
-                          isHighSensitivity(entity.type) ? 'text-[#f0c48a]' : 'text-[#8be6d3]'
-                        }`}
-                      >
+                    <td className="px-2.5 py-1.5">
+                      <span className={`mono text-[11px] ${isHighSensitivity(entity.type) ? 'text-review' : 'text-accent'}`}>
                         {entity.type}
                       </span>
                     </td>
-                    <td className="px-2 py-1.5">
+                    <td className="px-2.5 py-1.5">
                       <span className="mono break-all text-[11.5px] text-fg">
                         {reveal ? entity.value : '•'.repeat(Math.min(18, Math.max(4, entity.value.length)))}
                       </span>
                     </td>
-                    <td className="mono px-2 py-1.5 text-[10.5px] text-fg-3">
+                    <td className="mono px-2.5 py-1.5 text-[10.5px] text-fg-3">
                       {entity.start}–{entity.end}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            {data.entities.length > 10 ? (
-              <div className="border-t border-line bg-panel-2 px-2 py-1.5 text-[10.5px] text-fg-3">
-                Showing 10 of {data.entities.length} findings.
+            {total > 10 ? (
+              <div className="border-t border-line bg-surface-2 px-2.5 py-1.5 text-[10.5px] text-fg-3">
+                Showing 10 of {total} findings.
               </div>
             ) : null}
           </div>
         </div>
       )}
-    </StageShell>
+    </StageRow>
   );
 }
 
@@ -289,54 +301,43 @@ export function InspectCard({
   const data = stage.data;
 
   return (
-    <StageShell
+    <StageRow
       title="Inspect · script behaviour"
       endpoint="POST /script"
-      icon={<CodeIcon size={14} />}
+      icon={<CodeIcon size={13} />}
       stage={stage}
       aside={data ? <VerdictChip verdict={data.verdict} /> : undefined}
+      metric={stage.status === 'skipped' ? 'not requested' : data ? pct(data.malicious) : '—'}
     >
       {!data ? (
-        <EmptyHint>
+        <p className="text-[12px] leading-relaxed text-fg-3">
           Inspect runs only for the “Script / command” content type. Nothing is executed — this is static analysis.
-        </EmptyHint>
+        </p>
       ) : (
-        <div className="space-y-2.5">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <div className="label">Malicious</div>
-              <div className="mt-0.5 text-[23px] font-semibold leading-none tracking-tight text-fg">
-                {pct(data.malicious)}
-              </div>
-            </div>
-            <div>
-              <div className="label">Suspicious</div>
-              <div className="mt-0.5 text-[23px] font-semibold leading-none tracking-tight text-fg-2">
-                {pct(data.suspicious)}
-              </div>
-            </div>
-          </div>
-
-          <ProbabilityMeter
-            value={data.malicious ?? 0}
-            threshold={data.threshold}
-            blockAt={thresholds.blockScriptMaliciousProbability}
-            tone={(data.malicious ?? 0) >= data.threshold ? 'block' : 'review'}
-            thresholdLabel={thresholdCaption(stage.mode)}
-          />
-          <div className="flex justify-between text-[10.5px] text-fg-3">
-            <span>
-              {thresholdCaption(stage.mode)} {pct(data.threshold, 0)}
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+            <span className="text-[24px] font-semibold leading-none tracking-tight text-fg">{pct(data.malicious)}</span>
+            <span className="text-[12px] text-fg-3">
+              malicious · {pct(data.suspicious)} suspicious
+              {data.category ? ` · ${data.category}` : ''}
             </span>
-            <span>policy block {pct(thresholds.blockScriptMaliciousProbability, 0)}</span>
           </div>
 
-          {data.category ? (
-            <div className="flex items-baseline gap-2 text-[11.5px]">
-              <span className="label">Category</span>
-              <span className="text-fg-2">{data.category}</span>
+          <div className="space-y-1.5">
+            <ProbabilityMeter
+              value={data.malicious ?? 0}
+              threshold={data.threshold}
+              blockAt={thresholds.blockScriptMaliciousProbability}
+              tone={(data.malicious ?? 0) >= data.threshold ? 'block' : 'review'}
+              thresholdLabel={thresholdCaption(stage.mode)}
+            />
+            <div className="flex justify-between text-[10.5px] text-fg-3">
+              <span>
+                {thresholdCaption(stage.mode)} {pct(data.threshold, 0)}
+              </span>
+              <span>policy block {pct(thresholds.blockScriptMaliciousProbability, 0)}</span>
             </div>
-          ) : null}
+          </div>
 
           {data.evidence.length > 0 ? (
             <EvidencePointer count={data.evidence.length} noun="flagged line" />
@@ -344,11 +345,9 @@ export function InspectCard({
             <p className="text-[11.5px] text-fg-3">No specific lines were flagged.</p>
           )}
 
-          <p className="text-[11px] leading-relaxed text-fg-3">
-            Static assessment only. A benign verdict is not an execution authorization.
-          </p>
+          <p className="text-[11px] text-fg-3">Static assessment only. A benign verdict is not an execution authorization.</p>
         </div>
       )}
-    </StageShell>
+    </StageRow>
   );
 }

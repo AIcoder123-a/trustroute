@@ -4,55 +4,66 @@ Every image in this folder comes from the production build of the commit it is c
 (`npm run build && npm start`), at the viewport stated below, with no key, no terminal and no devtools in
 frame. Nothing here is a mockup or a design comp.
 
-The set is small on purpose: five screens carry the product story, two carry the failure state.
+The set is small on purpose: five screens carry the product story, two carry the failure state, and one
+pair records what the layout looked like before the Phase 7 redesign.
 
-## 1. The five story screens
+## 1. The story screens (Phase 7 layout, 2026-11-03)
 
-| File | Viewport | Mode | What it shows | Demo scene |
-| --- | --- | --- | --- | --- |
-| `landing.png` | 1440×900 | simulated | The idle state: the three-step strip (paste → three checks → a policy decides), the empty input with its character budget, the demo-case rail, and *How the decision is made* explaining PASS / REVIEW / BLOCK before any content is loaded | 1 |
-| `workbench-injection.png` | 1440×900 | simulated | The prompt-injection case screened: `BLOCK`, "Do not forward this content. Blocked at the gateway.", Guard at 95.8 % / severity critical / category *instruction override*, 1 entity masked, 5 evidence passages each anchored to an `L<n>` line, and the rule trace reading *8 checks · 2 blocking* | 2 |
-| `masked-copy.png` | 1440×900 | simulated | The personal-data case after `PASS`: the *Forwarded copy* tab with `<PERSON>`, `<PHONE>`, `<EMAIL>`, `<ADDRESS>`, the mask map (`email → <EMAIL> ×1`), "4 values masked · 4 kinds · 96 chars removed", and the empty-evidence explanation ("Neither Guard nor Inspect returned a passage…") | 3 |
-| `review-decision.png` | 364×902 crop | simulated | The decision panel on its own, at 1× so the text is readable: findings, rule trace, *What to do next*, the Guard/Inspect/entities/credits readout, the human checkpoint with `Approve` / `Reject` / `Recheck`, and the note counter ("8 more characters to reject") | 4 |
-| `report.png` | 1440×900 | simulated | The *Review sheet* dialog over the workbench: subject table (chars, words, SHA-256 prefix, entities), the screening table row per endpoint (`POST /injection` ok · benign · 0.0 % · 410 ms, `POST /pii` ok · 4 finding(s), `POST /script` skipped), protection applied, the copy that would be forwarded, and the policy reasons | 5 |
-| `mobile.png` | 390×844 | simulated | The same blocked run on a phone: the source view with the injected sentences highlighted through a word wrap the desktop layout never produces, and the evidence list below it | 4 (mobile proof) |
+| File | Viewport | Mode | What it shows |
+| --- | --- | --- | --- |
+| `landing.png` | 1440×900 | simulated | The first screen after the redesign: one statement, one input, one primary action, eight synthetic cases as chips, and a quiet rail that explains PASS / REVIEW / BLOCK before anything is loaded. No step cards, no tutorial column. |
+| `workbench-injection.png` | 1440×900 | simulated | The prompt-injection case screened: `BLOCK` with "Do not forward this content. Blocked at the gateway.", five at-a-glance numbers (injection 95.8 %, script risk n/a, masked 1, latency, credits), the reader with the injected sentences highlighted, and the reasoning rail — *Why* (3 findings), *What to do next*, *Human checkpoint*. |
+| `stages.png` | 1440×620 crop | simulated | The three detections as rows, not three cards: `Guard · prompt injection` 95.8 %, `Protect · personal data` 1 entity, `Inspect · script behaviour` *not requested*. Each row opens to its meters and thresholds; the provenance footnote sits under them. |
+| `review-decision.png` | 324×740 crop | simulated | The reasoning rail at 1×: the three findings with their source tags, the rule trace (9 checks · 2 blocking), the required actions, and the human checkpoint with `Approve` / `Reject` and the note counter ("8 more characters to reject"). |
+| `masked-copy.png` | 1440×900 | simulated | The personal-data case after `PASS`: *Forwarded copy* with `<PERSON>`, `<PHONE>`, `<EMAIL>`, `<ADDRESS>`, the mask map (`address → <ADDRESS> ×1`), "4 values masked", and the *See what arrived* affordance back to the original. |
+| `report.png` | 1440×900 | simulated | The *Review sheet* dialog: subject table (chars, words, SHA-256 prefix, entities), one screening row per endpoint, protection applied, the copy that would be forwarded, the policy reasons, disclaimers and the raw JSON. |
+| `mobile.png` | 390×844 | simulated | The blocked run on a phone, single column: decision band, reader, then reasoning — the order a phone reader needs, not a compressed three-column layout. |
+| `mobile-result.png` | 390×844 | simulated | The same run scrolled to the decision band, showing that `Why` and `Again` stay in the band at 390 px and that nothing is clipped. |
 
-`docs/screenshots/after/desktop-03-block-full.png` is the full-page (1000×1089) version of the blocked run:
-it is the only image that shows the detection stages in the same frame as the decision — the probability
-ruler at 95.8 %, the simulator threshold (50 %) and the policy block line (85 %) drawn on the same scale,
-plus the Protect entity table.
+`after/desktop-03-block-full.png` is the full-page version of the blocked run: the only image that shows
+the decision, the reader, the evidence list, the stage rows, the technical-details disclosure and the
+session trail in one frame.
 
 ## 2. The failure state
 
 | File | Viewport | Mode | What it shows |
 | --- | --- | --- | --- |
-| `screening-unavailable.png` | 1440×900 | **live** | A real live-mode run on a machine the edge refuses: the `LIVE` pill, the amber `Unavailable` badge, "no risk verdict / held for a human", the headline *Screening unavailable — manual review required.*, an explanation that the REVIEW state exists because the content is unscreened — not because anything was found — and both stages reporting `Request failed · edge_interstitial` with the 403-instead-of-JSON explanation |
-| `screening-unavailable-mobile.png` | 390×844 | **live** | The mobile decision bar in that state: `UNAVAILABLE` chip and the same headline, with the `Why` affordance that scrolls to the reasons |
+| `screening-unavailable.png` | 1440×900 | **live** | A real live-mode run on a machine the edge refuses: the `Unavailable` badge, "no risk verdict · held for a human", the headline *Screening unavailable — manual review required.*, a Protect row that explains its own failure without being expanded, and a rail stating that the content is unscreened rather than cleared |
+| `screening-unavailable-mobile.png` | 390×844 | **live** | The same state on a phone: the `Unavailable` badge and headline in the band, with the `Why` affordance that scrolls to the reasons |
+
+Both live images were captured **before** the Phase 7 layout (2026-10-31) and still show the previous dark
+interface. They are kept because the evidence in them — a real `403 cf-mitigated: challenge` handled as
+"screening unavailable" rather than as a pass — is about behaviour, not styling. They will be re-captured
+after the next deployment that can reach the API from a browser-reachable host.
 
 This is the most valuable pair in the folder for a judge: it is the one state a demo that only shows green
-checks can never produce. It was captured with `CLOCKED_MODE=live` against `clocked.rezolve.ai`, which
-answered the server-side call with `403 cf-mitigated: challenge`; the screenshots record the product's
-handling of that answer, not a hand-written fixture. No credit was spent — the refusal happens before
-authentication.
+checks can never produce. No credit was spent — the refusal happens before authentication.
 
-## 3. Recorded, not curated: `before/` and `after/`
+## 3. Before and after the redesign
 
-`before/` and `after/` hold the same five states captured on either side of the 2026-10-31 refinement pass
-(1× at 1440×900, plus the mobile pair). They are kept as the evidence for the visual claims in
-`docs/TEST_REPORT.md` §6 rather than as submission material; when they disagree with the root folder, the
-root folder is current.
+| Folder | Contents |
+| --- | --- |
+| `phase7-before/` | `landing.png` and `result.png` from the previous dark three-column layout, captured 2026-11-03 immediately before the rewrite |
+| `phase7-after/` | The same two states from the new layout, same viewport, same case, same mode |
+
+The pair exists so the visual claims in `docs/TEST_REPORT.md` §7 can be checked rather than taken on
+trust. Both halves are 1440×900, simulated mode, and show the *Classic prompt injection* case.
+
+`before/` and `after/` hold an earlier refinement pass (2026-10-31) and are historical; where they disagree
+with the root folder, the root folder is current.
 
 ## 4. Re-capturing
 
 ```bash
 npm run build
-CLOCKED_MODE=mock npm start          # story screens: the SIMULATED banner must be in frame
+CLOCKED_MODE=mock npm start          # story screens: the SIMULATED notice must be in frame
 CLOCKED_MODE=live npm start          # failure screens: needs a key, spends no credits on a 403
 ```
 
-- Viewport 1440×900 at device scale 1 for desktop, 390×844 for mobile; the layout is tuned for both.
+- Viewport 1440×900 at device scale 1 for desktop, 390×844 for mobile; the layout is tuned for both, and
+  320 px is checked for overflow (`document.scrollWidth === window.innerWidth`) but not committed.
 - One screenshot per state, taken after the decision renders — not during the loading skeleton.
-- Never crop the mode banner or the `LIVE` / `SIMULATED` pill: the mode is part of the evidence.
+- Never crop the mode notice or the `Simulated` / `Live` pill: the mode is part of the evidence.
 - Simulated numbers are labelled *simulator threshold* on screen; if a future capture changes the labels,
   re-read `docs/DEMO_SCRIPT.md` before recording, so the narration matches the pixels.
 - Check the frame before committing it: no `.env.local`, no terminal, no browser autofill, no real personal

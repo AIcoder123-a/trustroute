@@ -102,7 +102,7 @@ test.describe('TrustRoute workbench', () => {
   test('states its problem, its mode and its cases on first load', async ({ page }) => {
     await page.goto('/');
 
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('Untrusted content should be inspected');
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Screen untrusted content');
     await expect(page.getByText('DEMO · SIMULATED RESULTS')).toBeVisible();
     await expect(page.getByText('Why is this a demo and not the live API?')).toBeVisible();
     await expect(page.locator('[data-testid="case-list"]:visible').first()).toBeVisible();

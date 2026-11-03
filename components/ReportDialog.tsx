@@ -41,7 +41,7 @@ export function ReportDialog({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="report-sheet my-4 w-full max-w-3xl rounded-xl border border-line-strong bg-panel shadow-2xl">
+      <div className="report-sheet my-4 w-full max-w-3xl rounded-xl border border-line-strong bg-surface shadow-xl">
         <header className="flex items-center justify-between gap-3 border-b border-line px-5 py-3.5 print-hide">
           <div>
             <h2 id="report-title" className="text-[14px] font-semibold tracking-tight">
@@ -63,7 +63,7 @@ export function ReportDialog({
             <button
               ref={closeRef}
               type="button"
-              className="btn btn-quiet h-8 px-2"
+              className="btn btn-ghost h-8 px-2"
               onClick={onClose}
               aria-label="Close review sheet"
             >
@@ -94,7 +94,7 @@ export function ReportDialog({
             </div>
           </div>
 
-          <p className="rounded-lg border border-line bg-panel-2 px-3 py-2.5 text-[12.5px] leading-relaxed text-fg-2">
+          <p className="rounded-lg border border-line bg-surface-2 px-3 py-2.5 text-[12.5px] leading-relaxed text-fg-2">
             {report.decision.headline}
           </p>
 
@@ -127,7 +127,7 @@ export function ReportDialog({
             <div className="overflow-hidden rounded-lg border border-line">
               <table className="w-full border-collapse text-left text-[11.5px]">
                 <thead>
-                  <tr className="bg-panel-2 text-[10px] uppercase tracking-[0.07em] text-fg-3">
+                  <tr className="bg-surface-2 text-[10px] uppercase tracking-[0.07em] text-fg-3">
                     <th className="px-2.5 py-1.5 font-semibold">Endpoint</th>
                     <th className="px-2.5 py-1.5 font-semibold">Status</th>
                     <th className="px-2.5 py-1.5 font-semibold">Verdict</th>

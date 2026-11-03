@@ -7,7 +7,7 @@ attacker-controlled. TrustRoute is the checkpoint in front of the agent: three C
 the content, personal data is masked, and a deterministic policy engine returns **PASS**, **REVIEW** or
 **BLOCK** with the evidence a human needs to defend the call.
 
-> Untrusted content should be inspected before it influences an AI agent.
+> Screen untrusted content before an agent reads it.
 
 ![The TrustRoute workbench after screening a prompt injection](docs/screenshots/workbench-injection.png)
 
@@ -68,6 +68,13 @@ The invariant that matters most: **a detection that did not complete can never p
 A missing key in live mode is a hard error, never a silent fallback to fixtures.
 
 ## Screens
+
+The interface has two levels, not three columns. **Intake** is one statement, one input and one primary
+action, with the eight synthetic cases as chips. Once a decision exists the page becomes a **workspace**:
+the verdict and its headline at the top with the numbers behind it, the source reader and its evidence on
+the left, and the reasoning — why, what to do next, the human checkpoint — on the right. Technical detail
+(stage meters, endpoints, timing, credits) is one disclosure away, and the source reader is the only dark
+surface in the product.
 
 | Masked copy, built from Protect spans | Human checkpoint |
 | --- | --- |
@@ -171,7 +178,8 @@ lib/copy             mode-aware wording: a sentence about Clocked can only exist
 ```
 
 - Next.js 16.4 App Router (route handlers, Node runtime), React 19.3, TypeScript strict.
-- Tailwind CSS 4 with a bespoke dark design system; no component library, no icon package.
+- Tailwind CSS 4 with a bespoke light design system — tokens in `app/globals.css`, no component library,
+  no icon package, no webfont download.
 - No database. The audit trail is an in-memory, content-free record (run id, SHA-256 prefix, length,
   decision, stage statuses) that disappears on restart — see `docs/SECURITY_NOTES.md`.
 

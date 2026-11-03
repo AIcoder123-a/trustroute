@@ -52,8 +52,8 @@ export function comparisonTooltip(mode: RunMode): string {
 /** The sentence under the stage list, asserting where the numbers came from. */
 export function detectionFootnote(mode: RunMode): string {
   return mode === 'live'
-    ? 'Detections are model estimates returned by Clocked for this exact input. The decision is produced by TrustRoute’s own rule engine; every comparison it made is listed in the trace on the right.'
-    : 'These numbers come from TrustRoute’s local simulator, not from Clocked — no API request was made. The decision, and the trace on the right, are still produced by the same policy engine that runs in live mode.';
+    ? 'Scores are model estimates returned by Clocked for this exact input. The decision is made by TrustRoute’s rule engine; every comparison it made is in the rule trace.'
+    : 'These scores come from TrustRoute’s local Guard simulator, not from Clocked — no API request was made. The decision is still made by the same rule engine that runs in live mode.';
 }
 
 /** One line above the evidence list. */

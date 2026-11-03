@@ -481,6 +481,45 @@ and **every probe that did reach the edge was refused with the challenge** — 2
 timeouts would have described a different fault; reporting only the 403s would have hidden that half the
 attempts never got an answer. Both are in the export.
 
+### 6.5 Provider reply — 2026-11-02
+
+Clocked Support answered on **2026-11-02**. The reply is summarised here because the raw message is
+correspondence, not a project artifact, and is kept outside the repository under `.local/support/`.
+
+What the reply says, in its own terms:
+
+1. The service sits behind a **Cloudflare edge rule that checks browser integrity**, and such a rule can
+   refuse non-browser clients with `403` before the request reaches the API.
+2. For **Python `urllib`** clients, the suggested mitigation is to send a **descriptive `User-Agent`**
+   instead of the library default.
+3. The edge rules are **being corrected** on their side.
+
+**What of that applies here.** Nothing in this project uses Python `urllib`. The product and both
+acceptance harnesses call Clocked through `clocked-sdk@0.7.0` from Node. Its transport is:
+
+```js
+// node_modules/clocked-sdk/dist/esm/client.js:17
+const USER_AGENT = isNode() ? `clocked-js/${VERSION} node/${process.versions.node}` : null;
+```
+
+so a Node process already sends `User-Agent: clocked-js/0.7.0 node/22.x.x` — a descriptive product token,
+which is exactly the mitigation the reply proposes. It is set by the SDK, not by this application, and a
+browser build of the SDK sends none because the browser supplies its own.
+
+**Therefore the `User-Agent` advice is not a verified fix for this case, and was not treated as one.** The
+refusals recorded in §6.3 already carried that descriptive token and were still answered with
+`cf-mitigated: challenge`, so the suggestion does not explain them. No header was added, no user agent was
+spoofed, no proxy was configured, and no challenge was solved.
+
+**What stands as the positive evidence.** The GitHub-hosted runner run of 2026-11-01 (`live-check #1`)
+called all three endpoints through the same SDK and the same code path and received `200` on each —
+`/injection`, `/pii`, `/script` — for 12 credits and $0.0024 (`docs/TEST_REPORT.md` §4.4). That run remains
+the proof that the integration is correct; this machine's egress remains the thing that is not.
+
+**Still open.** Whether a participant in mainland China is eligible to enter and to receive an award is a
+competition question, not an API question, and **the organiser has not replied**. It is recorded as
+unresolved in `docs/COMPETITION_RULES.md` rather than assumed.
+
 ## 7. What the demo does without a key
 
 `CLOCKED_MODE=auto` (default) resolves to **mock** when no key is present. Mock mode:

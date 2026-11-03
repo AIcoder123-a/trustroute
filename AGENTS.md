@@ -15,15 +15,20 @@ The product is a checkpoint, not an agent. It never executes anything.
 
 ```
 app/
-  layout.tsx            root layout, dark theme, metadata
+  layout.tsx            root layout, light theme, translate protection, metadata
   page.tsx              server component: resolves live/mock mode, renders the workbench
   api/analyze/route.ts  POST — the only way content reaches Clocked
   api/review/route.ts   POST — records a human decision (in memory)
   api/status/route.ts   GET  — reports mode + limits, never the key
   api/audit/route.ts    GET  — last 10 content-free audit records (session trail)
 components/             UI (client components); Workbench.tsx orchestrates
+  Workbench.tsx         two levels: Intake (no result) and Results (result); owns all request state
+  CasePicker.tsx        demo cases as chips + the content-type segmented control
+  ContentView.tsx       the dark reader: source with highlights, forwarded copy, mask map
   EvidencePanel.tsx     passage-level evidence for Guard + Inspect, click to locate in the source
-  SessionTrail.tsx      content-free run history shown in the left rail
+  DecisionPanel.tsx     ResultSummary (the band), InsightRail (why / next / checkpoint), DecisionPrimer
+  stages.tsx            the three detections as expandable rows; a failed row cannot be collapsed
+  SessionTrail.tsx      content-free run history
 lib/
   clocked/              transport adapters
     live.ts             real SDK calls, error taxonomy
@@ -107,9 +112,14 @@ Playwright downloads browsers once: `npx playwright install chromium`.
 - UI text is English. Reports, commit messages and code comments are English. Conversations with the
   owner are Chinese.
 - Colours live in `app/globals.css` under `@theme`; do not hardcode hex values in components except for
-  the few semantic tints already established.
+  the few semantic tints already established (the reader's highlight marks, the legend swatches).
+- Visual language: light neutral surfaces, one teal brand colour, red/amber reserved for risk, hairline
+  borders, no shadows except the sticky header and the report dialog. The source/evidence reader is the
+  only dark surface. `components/ui.tsx` holds the shared decision colours and the probability meter.
+- A failed detection renders its consequence inline and cannot be collapsed; a skipped one reads
+  "not requested" rather than borrowing the failure language.
 
-## 6. Current state (2026-11-01)
+## 6. Current state (2026-11-03)
 
 | Area | State |
 | --- | --- |

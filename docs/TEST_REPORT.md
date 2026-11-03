@@ -301,16 +301,82 @@ immediately — an outage does not become a 3-second stall per request followed 
 
 ## 6. Manual review pass
 
-- Desktop 1440×900 and mobile 390×844 screenshotted at every state (idle, block, masked copy, report
-  dialog). No horizontal overflow, no clipped controls, no overlapping text. Before/after pairs from the
-  2026-10-31 refinement are in `docs/screenshots/before/` and `docs/screenshots/after/`.
-- Keyboard: `Tab` reaches every control in reading order; `⌘/Ctrl+Enter` screens the current input;
-  `Escape` closes the review sheet and returns focus to the sheet's close button.
-- Colour contrast, measured rather than eyeballed: body text `#f1f3f5` on `#0a0b0d` is 17.7:1, secondary
-  `#b7bec8` on `#101216` is 10.0:1, and the meta text `#8a929d` — previously `#6f7781`, which measured
-  only ~3.6:1 — is now 6.0:1. PASS/REVIEW/BLOCK colours are 8.6/8.9/5.6:1 on the panel, and each is
-  always paired with a text label, never colour alone.
-- Empty, loading, error and success states all render distinct, actionable UI.
+Re-run on 2026-11-03 against the Phase 7 layout (light theme). Every number below was measured in the
+running product, not estimated from the stylesheet.
+
+**Layout at five widths.** `document.documentElement.scrollWidth` equals `clientWidth` at 1440, 1280, 768,
+390 and 320 px, on both the intake screen and a rendered result — so there is no horizontal scrollbar and
+no content pushed off-screen. The first mobile capture of the redesign did overflow (1339 px of content
+inside a 390 px viewport, caused by the demo-case row expanding its grid track); that is recorded here
+because it is the reason `min-w-0` is now set on both grid children in `Workbench.tsx`.
+
+**Keyboard.** `Tab` from the top of a result reaches, in order: `Edit input`, `Screen again`, `JSON report`,
+`Review sheet`, `As received` / `Forwarded copy` tabs, `Copy`, each evidence row, each stage summary, the
+`Rule trace` summary, the reviewer-note textarea, `Approve`, `Reject`. Every one of them reports
+`outline-style: solid; outline-width: 2px` when focused (`:focus-visible` in `globals.css`). `⌘/Ctrl+Enter`
+screens the current input; `Escape` closes the review sheet and returns focus to its close button.
+
+**Accessible names.** Tabs carry `aria-label` (`As received`, `Forwarded copy`) instead of exposing the
+count as part of the name; the re-run control carries `aria-label="Screen again"` because its visible text
+is abbreviated to `Again` below 640 px; the textarea is `Content to screen`; the decision band is
+`role="status"` with `aria-label="Screening decision: BLOCK"` and `aria-live="polite"`; the evidence list is
+`role="region" aria-label="Evidence"`; each stage row is a native `<summary>`, so it is operable without JS.
+
+**Colour contrast, measured** (WCAG 2.1 relative luminance, no rounding up):
+
+| Pair | Ratio | Requirement |
+| --- | --- | --- |
+| body text `#0e1a18` on white | 17.80:1 | AA 4.5 |
+| secondary `#45534f` on white | 8.07:1 | AA 4.5 |
+| meta `#5f6e68` on white | 5.36:1 | AA 4.5 |
+| meta `#5f6e68` on canvas `#f6f7f6` | 4.99:1 | AA 4.5 |
+| accent `#0d7466` on white | 5.66:1 | AA 4.5 |
+| white on the primary button `#0d7466` | 5.66:1 | AA 4.5 |
+| PASS `#107058` on `#e8f4ef` | 5.35:1 | AA 4.5 |
+| REVIEW `#8f5c14` on `#fbf2e1` | 5.09:1 | AA 4.5 |
+| BLOCK `#ac2630` on `#fceceb` | 5.97:1 | AA 4.5 |
+| reader text `#e8eeec` on `#101816` | 15.35:1 | AA 4.5 |
+| reader meta `#aab8b4` on `#101816` | 8.78:1 | AA 4.5 |
+| injection mark `#ffb3b7` on `#3d1a1e` | 9.07:1 | AA 4.5 |
+| PII mark `#9fe8d6` on `#12352f` | 9.51:1 | AA 4.5 |
+| script mark `#f2d59a` on `#3a2c12` | 9.53:1 | AA 4.5 |
+
+Status is never carried by colour alone: every badge and every finding label is a word.
+
+**Reduced motion.** With `prefers-reduced-motion: reduce`, the spinner's computed
+`animation-duration` is `1e-05s` and `scroll-behavior` is `auto`. No transition in the product is longer
+than 140 ms to begin with.
+
+**Auto-translation.** `<html translate="no" class="notranslate">` plus `<meta name="google"
+content="notranslate">`. This matters for evidence location, not cosmetics: a translator rewrites the text
+nodes inside `<mark data-start>` and the offsets the locator uses stop matching. (The owner hit a milder
+version of this — browser auto-translation breaking the deployed demo — on 2026-11-01.)
+
+**Empty, loading, error and success states** each render distinct, actionable UI; the loading state shows
+elapsed time and a `Cancel` that leaves no decision behind.
+
+### 6.1 Phase 7 regression run — 2026-11-03
+
+| Gate | Command | Result |
+| --- | --- | --- |
+| Types | `npm run typecheck` | clean |
+| Lint | `npm run lint` | clean, 0 warnings |
+| Unit / integration | `npm run test` | **180 passed**, 23 files |
+| Production build | `npm run build` | clean (Next.js 16.4.3, 5 routes) |
+| Browser suite | `npx playwright test` | **44 passed, 2 deliberate skips** (23 scenarios × desktop 1440×900 + Pixel 7) |
+
+The browser suite is the regression net for this redesign, and it was not weakened to make it pass. Two
+assertions changed because the copy changed on purpose:
+
+| Test | Before | After |
+| --- | --- | --- |
+| first load states its problem | `h1` contains *Untrusted content should be inspected* | `h1` contains *Screen untrusted content* |
+| the footnote names the simulator | `/local Guard simulator/i` still matches (`lib/copy.ts`), only the surrounding sentence is shorter | unchanged regex |
+
+Everything else — PASS / REVIEW / BLOCK, masking, evidence location, rule trace, the reject-needs-a-reason
+rule, JSON export, review sheet, unavailable state, 503, network failure, cancel, and the mobile-only
+assertions — passes unmodified against the new components. Screenshots for every state are in
+`docs/screenshots/`; the before/after pair is in `docs/screenshots/phase7-before/` and `phase7-after/`.
 
 ## 7. Credential-handling review of the verification harness
 

@@ -4,47 +4,37 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { DEMO_CASES } from '@/lib/cases';
 import { buildReport } from '@/lib/report';
-import {
-  detectionFootnote,
-  headerModeLabel,
-  headerModeTitle,
-  heroSteps,
-  runOriginLabel,
-} from '@/lib/copy';
+import { detectionFootnote, headerModeLabel, headerModeTitle } from '@/lib/copy';
 import type {
   AnalyzeResponse,
   AuditRecord,
   ContentType,
-  Decision,
   DemoCase,
   ReviewAction,
   ReviewEvent,
 } from '@/lib/types';
 import { CONTENT_TYPE_LABELS } from '@/lib/types';
-import { CaseRail, CaseStrip, ContentTypeTabs } from '@/components/CaseRail';
+import { CasePicker, ContentTypeTabs } from '@/components/CasePicker';
 import { ContentView } from '@/components/ContentView';
-import { DecisionPanel } from '@/components/DecisionPanel';
+import { DecisionPrimer, InsightRail, ResultSummary } from '@/components/DecisionPanel';
 import { EvidencePanel } from '@/components/EvidencePanel';
 import { ReportDialog } from '@/components/ReportDialog';
 import { SessionTrail } from '@/components/SessionTrail';
 import { GuardCard, InspectCard, ProtectCard } from '@/components/stages';
-import { DecisionBadge, UnavailableBadge } from '@/components/ui';
 import {
   AlertIcon,
-  ArrowRightIcon,
-  CodeIcon,
-  RefreshIcon,
+  ChevronRightIcon,
   DocumentIcon,
-  EyeIcon,
   LoaderIcon,
   LockIcon,
-  RouteIcon,
   ScanIcon,
   ShieldIcon,
   XIcon,
 } from '@/components/icons';
 
 type RunState = 'idle' | 'loading' | 'ready' | 'error';
+
+const SHELL = 'mx-auto w-full max-w-[1240px] px-4 sm:px-6 lg:px-8';
 
 export function Workbench({
   mode,
@@ -82,6 +72,8 @@ export function Workbench({
   const limit = contentType === 'script' ? limits.scriptCharacters : limits.proseCharacters;
   const overLimit = text.length > limit;
   const canAnalyze = text.trim().length > 0 && !overLimit && runState !== 'loading';
+  const busy = runState === 'loading';
+  const showIntake = result === null || editInput;
 
   const refreshAudit = useCallback(async () => {
     try {
@@ -175,7 +167,7 @@ export function Workbench({
         setResult(body as AnalyzeResponse);
         setRunState('ready');
         void refreshAudit();
-        requestAnimationFrame(() => resultRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+        requestAnimationFrame(() => resultRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
       } catch (cause) {
         if (seq !== runSeq.current) return;
         if (cause instanceof Error && cause.name === 'AbortError') {
@@ -211,7 +203,7 @@ export function Workbench({
       setText(item.text);
       setNotice(null);
       resetRun();
-      textareaRef.current?.focus();
+      requestAnimationFrame(() => textareaRef.current?.focus());
     },
     [resetRun],
   );
@@ -236,8 +228,8 @@ export function Workbench({
   const submitReview = useCallback(
     async (action: ReviewAction, note: string) => {
       if (!result) return;
-      const decisionBefore: Decision = result.policy.decision;
-      const decisionAfter: Decision = action === 'approve' ? 'PASS' : action === 'reject' ? 'BLOCK' : decisionBefore;
+      const decisionBefore = result.policy.decision;
+      const decisionAfter = action === 'approve' ? 'PASS' : action === 'reject' ? 'BLOCK' : decisionBefore;
 
       setReviewBusy(true);
       try {
@@ -314,8 +306,12 @@ export function Workbench({
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = `${Math.min(460, Math.max(200, el.scrollHeight))}px`;
-  }, [text, contentType, result]);
+    el.style.height = `${Math.min(380, Math.max(168, el.scrollHeight))}px`;
+  }, [text, contentType, showIntake]);
+
+  useEffect(() => {
+    if (editInput) requestAnimationFrame(() => textareaRef.current?.focus());
+  }, [editInput]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -328,14 +324,10 @@ export function Workbench({
     return () => window.removeEventListener('keydown', onKey);
   }, [analyze, canAnalyze]);
 
-  const busy = runState === 'loading';
-  // Once there is a result, the text itself is shown highlighted in the content
-  // view; keeping the full textarea open only pushes the decision off screen.
-  const inputCollapsed = result !== null && !busy && !editInput;
   const warnings = useMemo(
     () =>
       (result?.warnings ?? []).filter(
-        // The banner above already says this, at full strength and before the
+        // The header notice already says this, at full strength and before the
         // reader has seen a single number.
         (warning) => !(mode === 'mock' && /^Mock mode is active/.test(warning)),
       ),
@@ -343,387 +335,82 @@ export function Workbench({
   );
 
   return (
-    <div id="app-shell" className="min-h-dvh bg-canvas">
-      <header className="sticky top-0 z-30 border-b border-line bg-canvas/90 backdrop-blur-md">
-        <div className="mx-auto flex h-14 max-w-[1680px] items-center gap-3 px-4">
-          <div className="flex items-center gap-2.5">
-            <span className="flex size-8 items-center justify-center rounded-lg border border-[#245049] bg-[#0f2a26] text-accent">
-              <ShieldIcon size={17} />
-            </span>
-            <div className="leading-tight">
-              <div className="text-[14.5px] font-semibold tracking-tight">TrustRoute</div>
-              <div className="text-[11px] text-fg-3">AI Agent Security Gateway</div>
-            </div>
-          </div>
+    <div id="app-shell" className="flex min-h-dvh flex-col">
+      <SiteHeader mode={mode} showIntake={showIntake} />
 
-          <div className="ml-3 hidden items-center gap-3 text-[11.5px] text-fg-3 md:flex">
-            <span className="inline-flex items-center gap-1">
-              <ScanIcon size={11} /> Guard
-            </span>
-            <span className="inline-flex items-center gap-1">
-              <LockIcon size={11} /> Protect
-            </span>
-            <span className="inline-flex items-center gap-1">
-              <CodeIcon size={11} /> Inspect
-            </span>
-          </div>
+      {mode === 'mock' ? <ModeNotice /> : null}
 
-          <div className="ml-auto flex items-center gap-2">
-            <a
-              href="#guide"
-              className="hidden text-[11.5px] text-fg-3 transition-colors hover:text-fg-2 sm:inline"
-            >
-              How it works
-            </a>
-            <span
-              className={`inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[11px] font-semibold uppercase tracking-[0.07em] ${
-                mode === 'live'
-                  ? 'border-[#1d5745] bg-[#0d2720] text-pass'
-                  : 'border-[#6b5320] bg-[#26200f] text-review'
-              }`}
-              title={headerModeTitle(mode)}
-            >
-              <span className={`size-1.5 rounded-full ${mode === 'live' ? 'bg-pass' : 'bg-review'}`} />
-              {headerModeLabel(mode)}
-            </span>
-          </div>
-        </div>
-      </header>
-
-      {mode === 'mock' ? (
-        <div className="border-b border-[#3f3316] bg-[#1a1509]">
-          <div className="mx-auto flex max-w-[1680px] items-start gap-2 px-4 py-2">
-            <AlertIcon size={13} className="mt-[3px] shrink-0 text-review" />
-            <div className="min-w-0">
-              <p className="text-[12px] leading-relaxed text-[#e0c58c]">
-                <span className="font-semibold uppercase tracking-[0.06em]">DEMO · SIMULATED RESULTS</span>
-                <span className="mx-1.5 opacity-60">—</span>
-                no Clocked API call is made. All three detections come from a local simulator and are not Clocked
-                verdicts or probabilities.
-              </p>
-              <details className="group mt-1">
-                <summary className="cursor-pointer list-none text-[11px] font-medium text-[#c9a86a]">
-                  <span className="inline-block text-[8px] transition-transform group-open:rotate-90" aria-hidden="true">
-                    ▶
-                  </span>{' '}
-                  Why is this a demo and not the live API?
-                </summary>
-                <p className="mt-1 max-w-[110ch] text-[11px] leading-relaxed text-[#bda67c]">
-                  The integration is real and was verified: on 2026-10-30 all three endpoints returned live detections
-                  (injection 0.9957 critical, six personal-data entities, a malicious script at 0.9956) and those exact
-                  responses are committed as test fixtures. What fails from this host is transport — the service edge
-                  answers non-browser clients with an HTML challenge (HTTP 403,{' '}
-                  <code className="mono">cf-mitigated: challenge</code>) before authentication, and we have not yet
-                  established why. The product calls Clocked from the server only, so it reports the failure and holds
-                  the content instead of guessing. Adding <code className="mono">CLOCKED_API_KEY</code> to{' '}
-                  <code className="mono">.env.local</code> and restarting switches the workbench to live mode; it never
-                  falls back to this simulator on its own.
-                </p>
-              </details>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      <main className="mx-auto max-w-[1680px] px-4 py-4">
-        {runState === 'idle' && !result ? (
-          <Hero mode={mode} onRunCase={runCase} onLoadCase={loadCase} />
-        ) : (
-          <ContextBar mode={mode} needsExample={runState === 'idle'} onLoadCase={loadCase} />
-        )}
-
-        <div className="lg:hidden">
-          <CaseStrip cases={DEMO_CASES} activeId={activeCase?.id ?? null} onSelect={loadCase} />
-        </div>
-
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[236px_minmax(0,1fr)] xl:grid-cols-[236px_minmax(0,1fr)_364px]">
-          <div className="order-3 hidden min-w-0 lg:order-1 lg:block">
-            <div className="lg:sticky lg:top-[68px] lg:space-y-3">
-              <CaseRail cases={DEMO_CASES} activeId={activeCase?.id ?? null} onSelect={loadCase} />
-              <SessionTrail records={audit} />
-              <p className="px-1 text-[11px] leading-relaxed text-fg-3">
-                TrustRoute screens input. It never runs a script, sends a message or calls a downstream tool.
-              </p>
-            </div>
-          </div>
-
-          <div className="order-1 min-w-0 space-y-3 lg:order-2">
-            {inputCollapsed ? (
-              <section
-                className="panel flex flex-wrap items-center gap-x-2.5 gap-y-1.5 px-3.5 py-2.5"
-                aria-label="Screened input"
-              >
-                <DocumentIcon size={13} className="shrink-0 text-fg-3" />
-                <span className="text-[12.5px] font-medium text-fg">{CONTENT_TYPE_LABELS[contentType]}</span>
-                <span className="mono text-[11px] text-fg-3">
-                  {text.length.toLocaleString()} chars · {result?.input.words.toLocaleString()} words
-                </span>
-                {activeCase ? (
-                  <span className="chip h-[22px] px-2 text-[10.5px]">{activeCase.title}</span>
-                ) : null}
-                <div className="ml-auto flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    className="btn btn-quiet h-7 px-2 text-[11.5px]"
-                    onClick={() => {
-                      setEditInput(true);
-                      requestAnimationFrame(() => textareaRef.current?.focus());
-                    }}
-                  >
-                    <DocumentIcon size={12} />
-                    Edit content
-                  </button>
-                  <button type="button" className="btn h-7 px-2.5 text-[11.5px]" onClick={() => void analyze()}>
-                    <RefreshIcon size={12} />
-                    Screen again
-                  </button>
-                </div>
-              </section>
-            ) : (
-            <section className="panel overflow-hidden" aria-label="Untrusted input">
-              <header className="flex flex-wrap items-center gap-2 px-3.5 py-2.5">
-                <h2 className="mr-1 text-[13.5px] font-semibold tracking-tight">Untrusted input</h2>
-                <ContentTypeTabs
-                  value={contentType}
-                  disabled={busy}
-                  onChange={(next) => {
-                    setContentType(next);
-                    if (activeCase && activeCase.contentType !== next) setActiveCase(null);
-                    resetRun();
-                  }}
-                />
-              </header>
-
-              {busy ? <div className="h-[2px] w-full animate-pulse bg-accent" /> : <div className="h-px w-full bg-line" />}
-
-              <div className="relative">
-                <textarea
-                  ref={textareaRef}
-                  value={text}
-                  onChange={(event) => {
-                    setText(event.target.value);
-                    if (activeCase) setActiveCase(null);
-                    if (runState !== 'loading') setRunState(result ? 'ready' : 'idle');
-                  }}
-                  spellCheck={false}
-                  aria-label="Content to screen"
-                  placeholder={
-                    contentType === 'script'
-                      ? 'Paste a script or command. It will be inspected statically — never executed.'
-                      : 'Paste a support ticket, a retrieved web page, or the output of a tool call…'
+      <main className={`${SHELL} flex-1 pb-16 pt-6 sm:pt-8`}>
+        {showIntake ? (
+          <Intake
+            mode={mode}
+            text={text}
+            setText={setText}
+            contentType={contentType}
+            setContentType={(next) => {
+              setContentType(next);
+              if (activeCase && activeCase.contentType !== next) setActiveCase(null);
+              resetRun();
+            }}
+            activeCase={activeCase}
+            onSelectCase={loadCase}
+            onRunCase={runCase}
+            busy={busy}
+            elapsed={elapsed}
+            canAnalyze={canAnalyze}
+            overLimit={overLimit}
+            limit={limit}
+            textareaRef={textareaRef}
+            onAnalyze={() => void analyze()}
+            onCancel={cancel}
+            onClear={() => {
+              setText('');
+              setActiveCase(null);
+              resetRun();
+              setNotice(null);
+            }}
+            error={error}
+            notice={notice}
+            audit={audit}
+            onDismissEdit={
+              result
+                ? () => {
+                    setEditInput(false);
+                    setNotice(null);
                   }
-                  className={`scroll-thin block min-h-[200px] w-full resize-none bg-transparent px-4 py-3.5 text-[13px] leading-[1.7] text-fg outline-none ${
-                    contentType === 'script' ? 'mono' : ''
-                  }`}
-                />
-                {text.length === 0 ? (
-                  <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center">
-                    <span className="chip h-[26px] border-dashed text-[11px] text-fg-3">or pick a demo case</span>
-                  </div>
-                ) : null}
-              </div>
-
-              {activeCase ? (
-                <div className="inset mx-3.5 mb-2.5 flex items-start gap-2 px-3 py-2">
-                  <RouteIcon size={13} className="mt-[3px] shrink-0 text-accent" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[12px] leading-relaxed text-fg-2">
-                      <span className="font-medium text-fg">{activeCase.title}.</span> {activeCase.teaches}
-                    </p>
-                    <p className="mt-1 flex flex-wrap items-center gap-1.5 text-[10.5px] text-fg-3">
-                      <span className="rounded border border-line px-1.5 py-px uppercase tracking-[0.06em]">
-                        preset outcome · {activeCase.expectation}
-                      </span>
-                      <span>What this case is built to show. Not a detection result.</span>
-                    </p>
-                  </div>
-                </div>
-              ) : null}
-
-              <footer className="flex flex-wrap items-center gap-2 border-t border-line px-3.5 py-2.5">
-                <span
-                  className={`mono text-[11px] ${overLimit ? 'text-block' : text.length > limit * 0.9 ? 'text-review' : 'text-fg-3'}`}
-                >
-                  {text.length.toLocaleString()} / {limit.toLocaleString()}
-                </span>
-                <span className="text-[11px] text-fg-3">
-                  {CONTENT_TYPE_LABELS[contentType]}
-                </span>
-
-                <div className="ml-auto flex items-center gap-1.5">
-                  {busy ? (
-                    <span className="mono text-[11px] text-fg-3" aria-live="polite">
-                      {(elapsed / 1000).toFixed(1)}s
-                    </span>
-                  ) : null}
-                  <button
-                    type="button"
-                    className="btn btn-quiet h-8 px-2.5 text-[12px]"
-                    onClick={() => {
-                      setText('');
-                      setActiveCase(null);
-                      resetRun();
-                      setNotice(null);
-                    }}
-                    disabled={busy || (text.length === 0 && !result)}
-                  >
-                    <XIcon size={13} />
-                    Clear
-                  </button>
-                  {busy ? (
-                    <button type="button" className="btn h-8 px-2.5 text-[12px]" onClick={cancel}>
-                      <XIcon size={13} />
-                      Cancel
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    className="btn btn-primary h-8 px-3 text-[12px]"
-                    onClick={() => void analyze()}
-                    disabled={!canAnalyze}
-                    aria-busy={busy}
-                  >
-                    {busy ? <LoaderIcon size={13} className="animate-spin" /> : <ScanIcon size={13} />}
-                    {busy ? 'Screening…' : 'Screen content'}
-                    <kbd className="mono ml-1 hidden rounded border border-black/25 px-1 text-[10px] font-normal opacity-70 sm:inline">
-                      ⌘↵
-                    </kbd>
-                  </button>
-                </div>
-              </footer>
-            </section>
-            )}
-
-            {error ? (
-              <div className="panel border-[#6d2a30] bg-[#241014] px-3.5 py-3" role="alert">
-                <div className="flex items-start gap-2">
-                  <AlertIcon size={14} className="mt-0.5 shrink-0 text-block" />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[13px] font-medium text-fg">{error.title}</div>
-                    <p className="mt-1 text-[12px] leading-relaxed text-fg-2">{error.detail}</p>
-                    <p className="mt-1.5 text-[11.5px] leading-relaxed text-fg-3">
-                      Nothing was released downstream. A failed screening is never treated as a pass.
-                    </p>
-                  </div>
-                  {error.retryable ? (
-                    <button type="button" className="btn h-7 shrink-0 px-2 text-[11.5px]" onClick={() => void analyze()}>
-                      Retry
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
-
-            {notice ? (
-              <div
-                className="flex items-start gap-2 rounded-lg border border-[#1d5745] bg-[#0f2019] px-3.5 py-2.5"
-                role="status"
-              >
-                <EyeIcon size={13} className="mt-[3px] shrink-0 text-pass" />
-                <p className="text-[12px] leading-relaxed text-[#a9e3c8]">{notice}</p>
-              </div>
-            ) : null}
-
-            {busy ? <ScreeningSkeleton elapsed={elapsed} /> : null}
-
-            {result && !busy ? (
-              <div className="xl:hidden">
-                <MobileDecisionBar
-                  decision={review?.decisionAfter ?? result.policy.decision}
-                  headline={result.policy.headline}
-                  unavailable={result.policy.screening === 'unavailable' && review === null}
-                />
-              </div>
-            ) : null}
-
-            <div ref={resultRef}>
-              <ContentView
-                result={result}
-                text={text}
-                focus={focus}
-                onLocate={(span) => setFocus({ start: span.start, end: span.end, id: `mask-${span.type}` })}
-              />
-            </div>
-
-            {result && !busy ? (
-              <div className="space-y-3">
-                <EvidencePanel
-                  result={result}
-                  text={text}
-                  focusId={focus?.id ?? null}
-                  onLocate={(row) => setFocus({ start: row.start, end: row.end, id: row.id })}
-                />
-
-                <div className="flex items-end justify-between gap-2">
-                  <h2 className="text-[12.5px] font-semibold tracking-tight text-fg-2">Detection stages</h2>
-                  <span className="text-[11px] text-fg-3">
-                    {runOriginLabel(result.stages.guard.mode)} · {result.input.characters.toLocaleString()} chars
-                  </span>
-                </div>
-                <GuardCard stage={result.stages.guard} thresholds={result.policy.thresholds} />
-                <ProtectCard
-                  stage={result.stages.protect}
-                  reveal={reveal}
-                  onToggleReveal={() => setReveal((value) => !value)}
-                />
-                {result.stages.inspect.status === 'skipped' ? (
-                  <div className="panel px-3.5 py-2.5">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <CodeIcon size={13} className="text-fg-3" />
-                      <span className="text-[12.5px] text-fg-2">Inspect not requested</span>
-                      <span className="text-[11.5px] text-fg-3">
-                        — the selected content type is {CONTENT_TYPE_LABELS[contentType]}, not a script.
-                      </span>
-                    </div>
-                  </div>
-                ) : (
-                  <InspectCard stage={result.stages.inspect} thresholds={result.policy.thresholds} sourceText={text} />
-                )}
-
-                {warnings.length > 0 ? (
-                  <ul className="space-y-1.5 px-1">
-                    {warnings.map((warning) => (
-                      <li key={warning} className="flex gap-2 text-[11.5px] leading-relaxed text-fg-3">
-                        <span className="mt-[7px] size-1 shrink-0 rounded-full bg-fg-3/70" aria-hidden="true" />
-                        {warning}
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-
-                <p className="pb-2 text-[11px] leading-relaxed text-fg-3">{detectionFootnote(result.mode)}</p>
-              </div>
-            ) : null}
-
-            {!result && !busy ? <IdleEmptyState onLoadCase={loadCase} /> : null}
-          </div>
-
-          <div className="order-2 min-w-0 xl:order-3">
-            <div id="decision" className="scroll-mt-[72px] xl:sticky xl:top-[68px]">
-              <DecisionPanel
-                result={result}
-                review={review}
-                busy={busy || reviewBusy}
-                onApprove={(note) => void submitReview('approve', note)}
-                onReject={(note) => void submitReview('reject', note)}
-                onRecheck={() => void analyze()}
-                onExport={exportJson}
-                onPrint={() => setReportOpen(true)}
-              />
-            </div>
-          </div>
-        </div>
-
-        <footer className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line pt-3 pb-4 text-[11px] text-fg-3">
-          <span>TrustRoute · built for the Clocked Build Challenge 2026</span>
-          <span className="hidden sm:inline">·</span>
-          <span>Guard, Protect and Inspect are Clocked endpoints</span>
-          <span className="ml-auto flex items-center gap-1.5">
-            <LockIcon size={11} />
-            API key stays server-side
-          </span>
-        </footer>
+                : undefined
+            }
+          />
+        ) : (
+          <Results
+            result={result!}
+            mode={mode}
+            busy={busy}
+            elapsed={elapsed}
+            review={review}
+            reviewBusy={reviewBusy}
+            notice={notice}
+            warnings={warnings}
+            text={text}
+            focus={focus}
+            setFocus={setFocus}
+            reveal={reveal}
+            setReveal={setReveal}
+            audit={audit}
+            contentType={contentType}
+            resultRef={resultRef}
+            onEdit={() => setEditInput(true)}
+            onRecheck={() => void analyze()}
+            onCancel={cancel}
+            onApprove={(note) => void submitReview('approve', note)}
+            onReject={(note) => void submitReview('reject', note)}
+            onExport={exportJson}
+            onPrint={() => setReportOpen(true)}
+          />
+        )}
       </main>
+
+      <SiteFooter />
 
       {reportOpen && report ? (
         <ReportDialog report={report} onClose={() => setReportOpen(false)} onDownload={exportJson} />
@@ -732,186 +419,531 @@ export function Workbench({
   );
 }
 
-function MobileDecisionBar({
-  decision,
-  headline,
-  unavailable,
-}: {
-  decision: Decision;
-  headline: string;
-  unavailable: boolean;
-}) {
+function SiteHeader({ mode, showIntake }: { mode: 'live' | 'mock'; showIntake: boolean }) {
   return (
-    <div className="panel flex items-center gap-2.5 px-3 py-2.5" data-screening={unavailable ? 'unavailable' : 'complete'}>
-      {unavailable ? <UnavailableBadge /> : <DecisionBadge decision={decision} />}
-      <p className="min-w-0 flex-1 text-[12px] leading-snug text-fg-2">{headline}</p>
-      <a href="#decision" className="btn h-7 shrink-0 px-2 text-[11.5px]">
-        Why
-        <ArrowRightIcon size={11} />
-      </a>
+    <header className="sticky top-0 z-30 border-b border-line bg-canvas/85 backdrop-blur-md">
+      <div className={`${SHELL} flex h-14 items-center gap-3`}>
+        <span className="flex size-7 items-center justify-center rounded-md bg-accent text-white">
+          <ShieldIcon size={16} />
+        </span>
+        <div className="flex items-baseline gap-2.5">
+          <span className="text-[14.5px] font-semibold tracking-tight">TrustRoute</span>
+          <span className="hidden text-[11.5px] text-fg-3 sm:inline">AI agent security gateway</span>
+        </div>
+
+        {showIntake ? (
+          <a href="#try" className="ml-auto hidden text-[12px] text-fg-2 transition-colors hover:text-fg sm:inline">
+            Try a screening
+          </a>
+        ) : null}
+        <span
+          className={`ml-1 inline-flex h-6 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-medium ${
+            mode === 'live'
+              ? 'border-pass-line bg-pass-soft text-pass'
+              : 'border-review-line bg-review-soft text-review'
+          }`}
+          title={headerModeTitle(mode)}
+        >
+          <span className={`size-1.5 rounded-full ${mode === 'live' ? 'bg-pass' : 'bg-review'}`} />
+          {headerModeLabel(mode)}
+        </span>
+      </div>
+    </header>
+  );
+}
+
+/**
+ * Provenance, stated once and in one line.
+ *
+ * The long explanation is still here — it is the record of why the demo runs a
+ * simulator — but it is one click away instead of occupying the first screen.
+ */
+function ModeNotice() {
+  return (
+    <div className="relative border-b border-review-line bg-review-soft/70">
+      <div className={`${SHELL} flex flex-wrap items-center gap-x-2 gap-y-1 py-1.5`}>
+        <AlertIcon size={12} className="shrink-0 text-review" />
+        <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-review">
+          DEMO · SIMULATED RESULTS
+        </span>
+        <span className="text-[11.5px] text-[#7a4d13]">
+          — no Clocked API call is made. Detections come from a local simulator, not from Clocked.
+        </span>
+        <details className="group ml-auto">
+          <summary className="cursor-pointer list-none text-[11px] font-medium text-review underline decoration-review/30 underline-offset-2 hover:decoration-review">
+            Why is this a demo and not the live API?
+          </summary>
+          <div className="absolute inset-x-0 top-full z-30 border-b border-line bg-surface px-4 py-3 shadow-sm sm:px-6 lg:px-8">
+            <div className={`${SHELL} max-w-[70ch] text-[11.5px] leading-relaxed text-fg-2`}>
+              The integration is real and verified: on 2026-10-30 all three endpoints returned live detections, and those
+              exact responses are committed as test fixtures. On 2026-11-01 a GitHub-hosted runner reached the same three
+              endpoints with HTTP 200. What fails from this host is transport — the service edge answers non-browser
+              clients with an HTML challenge before authentication. TrustRoute reports that failure and holds the
+              content rather than guessing; adding a key never falls back to this simulator.
+            </div>
+          </div>
+        </details>
+      </div>
     </div>
   );
 }
 
-function ScreeningSkeleton({ elapsed }: { elapsed: number }) {
-  const stages = ['Guard · scoring injection', 'Protect · finding personal data', 'Inspect · reading the script'];
+function Intake({
+  mode,
+  text,
+  setText,
+  contentType,
+  setContentType,
+  activeCase,
+  onSelectCase,
+  onRunCase,
+  busy,
+  elapsed,
+  canAnalyze,
+  overLimit,
+  limit,
+  textareaRef,
+  onAnalyze,
+  onCancel,
+  onClear,
+  error,
+  notice,
+  audit,
+  onDismissEdit,
+}: {
+  mode: 'live' | 'mock';
+  text: string;
+  setText: (value: string) => void;
+  contentType: ContentType;
+  setContentType: (value: ContentType) => void;
+  activeCase: DemoCase | null;
+  onSelectCase: (item: DemoCase) => void;
+  onRunCase: (item: DemoCase) => void;
+  busy: boolean;
+  elapsed: number;
+  canAnalyze: boolean;
+  overLimit: boolean;
+  limit: number;
+  textareaRef: React.RefObject<HTMLTextAreaElement | null>;
+  onAnalyze: () => void;
+  onCancel: () => void;
+  onClear: () => void;
+  error: { title: string; detail: string; retryable: boolean } | null;
+  notice: string | null;
+  audit: AuditRecord[];
+  onDismissEdit?: () => void;
+}) {
+  const starter = DEMO_CASES.find((item) => item.expectation === 'block');
+
   return (
-    <div className="panel px-3.5 py-3" aria-busy="true" aria-live="polite">
+    <div id="try" className="grid scroll-mt-24 gap-8 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-12">
+      <section className="min-w-0">
+        <p className="text-[11.5px] font-semibold uppercase tracking-[0.12em] text-accent">Agent input screening</p>
+        <h1 className="mt-3 max-w-[19ch] text-[30px] font-semibold leading-[1.12] tracking-[-0.025em] text-fg sm:text-[38px]">
+          Screen untrusted content before an agent reads it.
+        </h1>
+        <p className="mt-3.5 max-w-[54ch] text-[14.5px] leading-[1.65] text-fg-2">
+          Paste a ticket, a retrieved page, a tool result or a script. TrustRoute checks it for injection, personal data
+          and risky behaviour, then returns a decision with the evidence behind it.
+        </p>
+
+        <div className="card mt-6">
+          <div className="flex flex-wrap items-center gap-2 px-4 pt-3.5 pb-2.5">
+            <ContentTypeTabs value={contentType} disabled={busy} onChange={setContentType} />
+            <span className="ml-auto hidden text-[11px] text-fg-3 sm:inline">
+              {CONTENT_TYPE_LABELS[contentType]}
+            </span>
+          </div>
+
+          <div className="border-t border-line">
+            <textarea
+              ref={textareaRef}
+              value={text}
+              onChange={(event) => setText(event.target.value)}
+              spellCheck={false}
+              aria-label="Content to screen"
+              placeholder={
+                contentType === 'script'
+                  ? 'Paste a script or command. It is inspected statically — never executed.'
+                  : 'Paste the text an agent is about to read…'
+              }
+              className={`scroll-thin block min-h-[168px] w-full resize-none bg-transparent px-4 py-3.5 text-[13.5px] leading-[1.7] text-fg outline-none ${
+                contentType === 'script' ? 'mono' : ''
+              }`}
+            />
+          </div>
+
+          {activeCase ? (
+            <div className="flex items-start gap-2 border-t border-line bg-surface-2/60 px-4 py-2">
+              <DocumentIcon size={12} className="mt-[3px] shrink-0 text-fg-3" />
+              <p className="text-[11.5px] leading-relaxed text-fg-2">
+                <span className="font-medium text-fg">{activeCase.title}</span>
+                <span className="text-fg-3">
+                  {' '}
+                  · built to show {activeCase.expectation.toUpperCase()} — a preset, not a detection result.
+                </span>
+              </p>
+            </div>
+          ) : null}
+
+          <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-2.5">
+            <span className={`mono text-[11px] ${overLimit ? 'text-block' : text.length > limit * 0.9 ? 'text-review' : 'text-fg-3'}`}>
+              {text.length.toLocaleString()} / {limit.toLocaleString()}
+            </span>
+            <span className="text-[11px] text-fg-3">
+              {overLimit ? 'over the limit' : 'characters'}
+            </span>
+
+            <div className="ml-auto flex items-center gap-1.5">
+              {onDismissEdit ? (
+                <button type="button" className="btn btn-ghost btn-sm" onClick={onDismissEdit}>
+                  Back to result
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={onClear}
+                disabled={busy || text.length === 0}
+              >
+                Clear
+              </button>
+              {busy ? (
+                <button type="button" className="btn btn-sm" onClick={onCancel}>
+                  <XIcon size={13} />
+                  Cancel
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={onAnalyze}
+                disabled={!canAnalyze}
+                aria-busy={busy}
+              >
+                {busy ? <LoaderIcon size={14} className="animate-spin" /> : <ScanIcon size={14} />}
+                {busy ? 'Screening…' : 'Screen content'}
+                <kbd className="mono ml-0.5 hidden rounded border border-white/25 px-1 text-[10px] font-normal opacity-80 sm:inline">
+                  ⌘↵
+                </kbd>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {busy ? <ScreeningProgress elapsed={elapsed} /> : null}
+
+        {error ? (
+          <div className="card mt-3 border-block-line bg-block-soft px-4 py-3" role="alert">
+            <div className="flex items-start gap-2.5">
+              <AlertIcon size={14} className="mt-0.5 shrink-0 text-block" />
+              <div className="min-w-0 flex-1">
+                <div className="text-[13px] font-semibold text-fg">{error.title}</div>
+                <p className="mt-1 text-[12px] leading-relaxed text-fg-2">{error.detail}</p>
+                <p className="mt-1 text-[11px] leading-relaxed text-fg-3">
+                  Nothing was released downstream. A failed screening is never treated as a pass.
+                </p>
+              </div>
+              {error.retryable ? (
+                <button type="button" className="btn btn-sm shrink-0" onClick={onAnalyze}>
+                  Retry
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
+        {notice ? (
+          <p className="mt-3 text-[11.5px] leading-relaxed text-fg-2" role="status">
+            {notice}
+          </p>
+        ) : null}
+
+        <div className="mt-6">
+          <CasePicker cases={DEMO_CASES} activeId={activeCase?.id ?? null} onSelect={onSelectCase} />
+        </div>
+
+        {starter ? (
+          <p className="mt-3 text-[11.5px] text-fg-3">
+            New here?{' '}
+            <button
+              type="button"
+              onClick={() => onRunCase(starter)}
+              data-testid="try-blocked"
+              className="font-medium text-accent underline decoration-accent/30 underline-offset-2 hover:decoration-accent"
+            >
+              Screen the blocked example
+            </button>{' '}
+            — one click runs all three checks.
+          </p>
+        ) : null}
+      </section>
+
+      <aside className="min-w-0 space-y-3 lg:pt-1" aria-label="Context">
+        <DecisionPrimer />
+        <SessionTrail records={audit} />
+        <p className="px-1 text-[11px] leading-relaxed text-fg-3">
+          TrustRoute screens input. It never runs a script, sends a message or calls a downstream tool.
+          {mode === 'live' ? ' This deployment is calling the Clocked API.' : ''}
+        </p>
+      </aside>
+    </div>
+  );
+}
+
+function Results({
+  result,
+  mode,
+  busy,
+  elapsed,
+  review,
+  reviewBusy,
+  notice,
+  warnings,
+  text,
+  focus,
+  setFocus,
+  reveal,
+  setReveal,
+  audit,
+  contentType,
+  resultRef,
+  onEdit,
+  onRecheck,
+  onCancel,
+  onApprove,
+  onReject,
+  onExport,
+  onPrint,
+}: {
+  result: AnalyzeResponse;
+  mode: 'live' | 'mock';
+  busy: boolean;
+  elapsed: number;
+  review: ReviewEvent | null;
+  reviewBusy: boolean;
+  notice: string | null;
+  warnings: string[];
+  text: string;
+  focus: { start: number; end: number; id: string } | null;
+  setFocus: (value: { start: number; end: number; id: string }) => void;
+  reveal: boolean;
+  setReveal: (value: boolean) => void;
+  audit: AuditRecord[];
+  contentType: ContentType;
+  resultRef: React.RefObject<HTMLDivElement | null>;
+  onEdit: () => void;
+  onRecheck: () => void;
+  onCancel: () => void;
+  onApprove: (note: string) => void;
+  onReject: (note: string) => void;
+  onExport: () => void;
+  onPrint: () => void;
+}) {
+  return (
+    <div ref={resultRef} className="scroll-mt-20 space-y-3">
+      <ResultSummary
+        result={result}
+        review={review}
+        busy={busy || reviewBusy}
+        onEdit={onEdit}
+        onRecheck={onRecheck}
+        onExport={onExport}
+        onPrint={onPrint}
+      />
+
+      {busy ? (
+        <div className="flex items-center gap-2 px-1 text-[11.5px] text-fg-2" aria-live="polite">
+          <LoaderIcon size={12} className="animate-spin text-accent" />
+          Screening again · {(elapsed / 1000).toFixed(1)}s
+          <button type="button" className="ml-auto text-accent underline underline-offset-2" onClick={onCancel}>
+            Cancel
+          </button>
+        </div>
+      ) : null}
+
+      {notice ? (
+        <p className="px-1 text-[11.5px] leading-relaxed text-fg-2" role="status">
+          {notice}
+        </p>
+      ) : null}
+
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_324px]">
+        {/* One column puts the reasoning directly under the source, so a phone
+            reader reaches the action without scrolling past every passage. */}
+        <div className="min-w-0 lg:col-start-1 lg:row-start-1">
+          <ContentView
+            result={result}
+            text={text}
+            focus={focus}
+            onLocate={(span) =>
+              setFocus({ start: span.start, end: span.end, id: `mask-${span.type}` })
+            }
+          />
+        </div>
+
+        <aside className="min-w-0 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:sticky lg:top-[76px] lg:self-start">
+          <InsightRail
+            result={result}
+            review={review}
+            busy={busy || reviewBusy}
+            onApprove={onApprove}
+            onReject={onReject}
+          />
+        </aside>
+
+        <div className="min-w-0 space-y-3 lg:col-start-1 lg:row-start-2">
+          <EvidencePanel
+            result={result}
+            text={text}
+            focusId={focus?.id ?? null}
+            onLocate={(row) => setFocus({ start: row.start, end: row.end, id: row.id })}
+          />
+
+          <section aria-label="Detection stages" className="space-y-2">
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 px-1">
+              <h2 className="text-[13px] font-semibold tracking-tight text-fg">Detection stages</h2>
+              <span className="text-[11px] text-fg-3">
+                {result.input.characters.toLocaleString()} chars · {CONTENT_TYPE_LABELS[contentType]}
+              </span>
+            </div>
+
+            <div className="card divide-y divide-line overflow-hidden">
+              <GuardCard stage={result.stages.guard} thresholds={result.policy.thresholds} />
+              <ProtectCard
+                stage={result.stages.protect}
+                reveal={reveal}
+                onToggleReveal={() => setReveal(!reveal)}
+              />
+              <InspectCard
+                stage={result.stages.inspect}
+                thresholds={result.policy.thresholds}
+                sourceText={text}
+              />
+            </div>
+
+            <p className="px-1 pt-1 text-[11px] leading-relaxed text-fg-3">{detectionFootnote(mode)}</p>
+
+            {warnings.length > 0 ? (
+              <ul className="space-y-1 px-1 pt-1">
+                {warnings.map((warning) => (
+                  <li key={warning} className="flex gap-2 text-[11px] leading-relaxed text-fg-3">
+                    <span className="mt-[7px] size-1 shrink-0 rounded-full bg-fg-3/70" aria-hidden="true" />
+                    {warning}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </section>
+
+          <details className="disclosure">
+            <summary>
+              <ChevronRightIcon size={12} className="chev text-fg-3" />
+              Technical details
+              <span className="ml-auto text-[11px] font-normal text-fg-3">
+                endpoints, models, timing, credits
+              </span>
+            </summary>
+            <TechnicalDetails result={result} />
+          </details>
+
+          <SessionTrail records={audit} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TechnicalDetails({ result }: { result: AnalyzeResponse }) {
+  const stages = [
+    { name: 'Guard', stage: result.stages.guard },
+    { name: 'Protect', stage: result.stages.protect },
+    { name: 'Inspect', stage: result.stages.inspect },
+  ];
+  return (
+    <div className="px-4 py-3">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-[11.5px] sm:grid-cols-4">
+        <div>
+          <dt className="text-fg-3">Run</dt>
+          <dd className="mono mt-0.5 text-fg-2">{result.runId.slice(0, 12)}</dd>
+        </div>
+        <div>
+          <dt className="text-fg-3">Input hash</dt>
+          <dd className="mono mt-0.5 text-fg-2">{result.input.textHash.slice(0, 12)}…</dd>
+        </div>
+        <div>
+          <dt className="text-fg-3">Words</dt>
+          <dd className="mono mt-0.5 text-fg-2">{result.input.words.toLocaleString()}</dd>
+        </div>
+        <div>
+          <dt className="text-fg-3">Deployment policy</dt>
+          <dd className="mt-0.5 text-fg-2">{result.input.instructionsApplied ? 'applied' : 'default'}</dd>
+        </div>
+      </dl>
+
+      <div className="mt-3 overflow-hidden rounded-lg border border-line">
+        <table className="w-full border-collapse text-left text-[11.5px]">
+          <thead>
+            <tr className="bg-surface-2 text-[10px] uppercase tracking-[0.06em] text-fg-3">
+              <th className="px-2.5 py-1.5 font-semibold">Stage</th>
+              <th className="px-2.5 py-1.5 font-semibold">Endpoint</th>
+              <th className="px-2.5 py-1.5 font-semibold">Status</th>
+              <th className="px-2.5 py-1.5 font-semibold">Attempts</th>
+              <th className="px-2.5 py-1.5 font-semibold">Latency</th>
+              <th className="px-2.5 py-1.5 font-semibold">Credits</th>
+            </tr>
+          </thead>
+          <tbody>
+            {stages.map(({ name, stage }) => (
+              <tr key={name} className="border-t border-line">
+                <td className="px-2.5 py-1.5 text-fg-2">{name}</td>
+                <td className="mono px-2.5 py-1.5 text-fg-3">{stage.endpoint}</td>
+                <td className="px-2.5 py-1.5 text-fg-2">{stage.status}</td>
+                <td className="mono px-2.5 py-1.5 text-fg-2">{stage.attempts}</td>
+                <td className="mono px-2.5 py-1.5 text-fg-2">{stage.latencyMs} ms</td>
+                <td className="mono px-2.5 py-1.5 text-fg-3">{stage.credits ?? '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <p className="mt-2.5 text-[10.5px] leading-relaxed text-fg-3">
+        Model identifiers and raw response envelopes are in the JSON report; the audit trail stores hashes, lengths and
+        statuses only — never the content itself.
+      </p>
+    </div>
+  );
+}
+
+function ScreeningProgress({ elapsed }: { elapsed: number }) {
+  return (
+    <div className="card mt-3 px-4 py-3" aria-busy="true" aria-live="polite">
       <div className="flex items-center gap-2">
         <LoaderIcon size={13} className="animate-spin text-accent" />
         <span className="text-[12.5px] font-medium text-fg">Screening</span>
         <span className="mono ml-auto text-[11px] text-fg-3">{(elapsed / 1000).toFixed(1)}s</span>
       </div>
-      <ul className="mt-2.5 space-y-2">
-        {stages.map((stage) => (
-          <li key={stage} className="flex items-center gap-2">
-            <span className="size-1.5 rounded-full bg-fg-3/40" aria-hidden="true" />
-            <span className="text-[11.5px] text-fg-3">{stage}</span>
-            <span className="ml-auto h-[5px] w-20 animate-pulse rounded-full bg-panel-3" />
-          </li>
-        ))}
-      </ul>
-      <p className="mt-2.5 text-[11px] leading-relaxed text-fg-3">
-        A full screen normally takes one to three seconds. Cancel leaves nothing screened and nothing released.
+      <p className="mt-1.5 text-[11.5px] text-fg-3">
+        Guard, Protect and Inspect run in parallel. A full screen usually takes a few seconds; cancel leaves nothing
+        screened and nothing released.
       </p>
     </div>
   );
 }
 
-function Hero({
-  mode,
-  onRunCase,
-  onLoadCase,
-}: {
-  mode: 'live' | 'mock';
-  onRunCase: (item: DemoCase) => void;
-  onLoadCase: (item: DemoCase) => void;
-}) {
-  const steps = heroSteps(mode);
-  const injection = DEMO_CASES.find((item) => item.expectation === 'block');
-  const pii = DEMO_CASES.find((item) => item.id === 'pii-ticket');
-
+function SiteFooter() {
   return (
-    <section className="mb-4" id="guide">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="chip h-[22px] border-[#245049] bg-[#0f2a26] px-2 text-[10px] uppercase tracking-[0.09em] text-[#8be6d3]">
-          Agent input screening
-        </span>
-        <span className="text-[11px] text-fg-3">
-          {mode === 'live' ? 'Live Clocked API' : 'Simulated detections · no API call'}
+    <footer className="border-t border-line">
+      <div className={`${SHELL} flex flex-wrap items-center gap-x-4 gap-y-1.5 py-4 text-[11px] text-fg-3`}>
+        <span>TrustRoute · Clocked Build Challenge 2026</span>
+        <span className="hidden sm:inline">·</span>
+        <span>Guard, Protect and Inspect are Clocked endpoints</span>
+        <span className="ml-auto inline-flex items-center gap-1.5">
+          <LockIcon size={11} />
+          API key stays server-side
         </span>
       </div>
-      <h1 className="mt-2.5 max-w-[38ch] text-[25px] font-semibold leading-[1.18] tracking-[-0.02em] text-fg sm:text-[29px]">
-        Untrusted content should be inspected before it influences an agent.
-      </h1>
-      <p className="mt-2 max-w-[76ch] text-[13.5px] leading-relaxed text-fg-2">
-        A ticket can carry personal data, a web page can carry instructions, and a tool result can carry a script your
-        automation is about to run. TrustRoute screens all three, masks what should not travel, and returns a decision
-        you can defend to a reviewer.
-      </p>
-
-      {injection || pii ? (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <span className="text-[11px] uppercase tracking-[0.07em] text-fg-3">Start with</span>
-          {injection ? (
-            <button
-              type="button"
-              className="btn btn-primary h-8 px-3 text-[12px]"
-              onClick={() => onRunCase(injection)}
-              data-testid="try-blocked"
-            >
-              <ScanIcon size={13} />
-              Screen the blocked example
-            </button>
-          ) : null}
-          {pii ? (
-            <button
-              type="button"
-              className="btn h-8 px-3 text-[12px]"
-              onClick={() => onLoadCase(pii)}
-              data-testid="try-masking"
-            >
-              <LockIcon size={13} />
-              Load a masking example
-            </button>
-          ) : null}
-          <span className="text-[11px] text-fg-3">
-            One click runs all three checks plus the decision — about two seconds.
-          </span>
-        </div>
-      ) : null}
-
-      <ol className="mt-3.5 hidden gap-2 sm:grid sm:grid-cols-3">
-        {steps.map((step, index) => (
-          <li key={step.title} className="panel flex gap-2.5 px-3 py-2.5">
-            <span className="mt-[1px] flex size-6 shrink-0 items-center justify-center rounded-md border border-line bg-panel-2 text-accent">
-              {index === 0 ? <DocumentIcon size={14} /> : index === 1 ? <ScanIcon size={14} /> : <ShieldIcon size={14} />}
-            </span>
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <span className="mono text-[10px] text-fg-3">0{index + 1}</span>
-                <span className="text-[12.5px] font-medium text-fg">{step.title}</span>
-              </div>
-              <p className="mt-0.5 text-[11.5px] leading-snug text-fg-3">{step.body}</p>
-            </div>
-          </li>
-        ))}
-      </ol>
-    </section>
-  );
-}
-
-/** Compact replacement for the hero once a run exists, so results start higher. */
-function ContextBar({
-  mode,
-  needsExample,
-  onLoadCase,
-}: {
-  mode: 'live' | 'mock';
-  needsExample: boolean;
-  onLoadCase: (item: DemoCase) => void;
-}) {
-  return (
-    <div id="guide" className="mb-3 flex scroll-mt-[72px] flex-wrap items-center gap-x-3 gap-y-1">
-      <h1 className="text-[13px] font-semibold tracking-tight text-fg-2">
-        Screen untrusted content before an agent reads it
-      </h1>
-      <span className="text-[11px] text-fg-3">
-        {mode === 'live' ? 'Live Clocked API' : 'Simulated detections'}
-      </span>
-      {needsExample ? (
-        <span className="ml-auto flex items-center gap-1.5 text-[11px] text-fg-3">
-          No case loaded —
-          <button
-            type="button"
-            className="text-accent underline decoration-dotted underline-offset-2"
-            onClick={() => {
-              const first = DEMO_CASES[0];
-              if (first) onLoadCase(first);
-            }}
-          >
-            pick one from the list
-          </button>
-        </span>
-      ) : null}
-    </div>
-  );
-}
-
-function IdleEmptyState({ onLoadCase }: { onLoadCase: (item: DemoCase) => void }) {
-  const example = DEMO_CASES.find((item) => item.expectation === 'block');
-  return (
-    <div className="panel flex flex-wrap items-center gap-2.5 px-3.5 py-3">
-      <ArrowRightIcon size={14} className="shrink-0 text-fg-3" />
-      <p className="min-w-0 flex-1 text-[12px] leading-relaxed text-fg-3">
-        Results appear here: the decision on the right, the passages behind it in the evidence list, and the copy that
-        would be forwarded in the view above.
-      </p>
-      {example ? (
-        <button type="button" className="btn h-7 px-2 text-[11.5px]" onClick={() => onLoadCase(example)}>
-          Load an example
-        </button>
-      ) : null}
-    </div>
+    </footer>
   );
 }

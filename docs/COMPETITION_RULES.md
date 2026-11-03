@@ -89,6 +89,12 @@ a comment on the Clocked challenge announcement on LinkedIn — the rules explic
 questions there so that every answer is public. Until that answer exists, treat the cash prize as
 **at risk** and the recognition as the realistic outcome.
 
+**Status 2026-11-03 — organiser has not replied.** The question has been put to the organiser and no
+answer has been received, so the position is unchanged: entry appears permitted, and the cash prize is
+**unconfirmed**. The Clocked API support thread of 2026-11-02 (`docs/API_INTEGRATION.md` §6.5) answered a
+transport question only and says nothing about location eligibility. This line is the record that the
+question is open, not a claim that it is resolved.
+
 ### 3.2 Age
 
 **UNVERIFIED for this entrant.** The rules require 18+ and legal majority. Age was not established in
