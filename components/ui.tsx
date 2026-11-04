@@ -38,10 +38,10 @@ export function DecisionBadge({ decision, large = false }: { decision: Decision;
   return (
     <span
       className={`inline-flex items-center gap-2 rounded-lg border font-semibold tracking-tight ${style.bg} ${style.border} ${style.text} ${
-        large ? 'h-9 px-3 text-[15px]' : 'h-6 px-2 text-[11.5px]'
+        large ? 'h-10 px-3.5 text-[16px]' : 'h-6 px-2 text-[11.5px]'
       }`}
     >
-      <span className={`${large ? 'size-2' : 'size-1.5'} rounded-full ${style.dot}`} />
+      <span className={`${large ? 'size-2.5' : 'size-1.5'} rounded-full ${style.dot}`} />
       {decision}
     </span>
   );
@@ -58,10 +58,10 @@ export function UnavailableBadge({ large = false }: { large?: boolean }) {
   return (
     <span
       className={`inline-flex items-center gap-2 rounded-lg border border-review-line bg-review-soft font-semibold tracking-tight text-review ${
-        large ? 'h-9 px-3 text-[15px]' : 'h-6 px-2 text-[11px] uppercase tracking-[0.05em]'
+        large ? 'h-10 px-3.5 text-[16px]' : 'h-6 px-2 text-[11px] uppercase tracking-[0.05em]'
       }`}
     >
-      <span className={`${large ? 'size-2' : 'size-1.5'} rounded-full bg-review`} />
+      <span className={`${large ? 'size-2.5' : 'size-1.5'} rounded-full bg-review`} />
       Unavailable
     </span>
   );

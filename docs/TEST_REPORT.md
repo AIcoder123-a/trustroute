@@ -378,6 +378,33 @@ rule, JSON export, review sheet, unavailable state, 503, network failure, cancel
 assertions — passes unmodified against the new components. Screenshots for every state are in
 `docs/screenshots/`; the before/after pair is in `docs/screenshots/phase7-before/` and `phase7-after/`.
 
+### 6.2 Phase 7.1 polish regression run — 2026-11-04
+
+| Gate | Command | Result |
+| --- | --- | --- |
+| Types | `npm run typecheck` | clean |
+| Lint | `npm run lint` | clean, 0 warnings |
+| Unit / integration | `npm run test` | **180 passed**, 23 files |
+| Production build | `npm run build` | clean (5 routes) |
+| Browser suite | `npx playwright test` | **44 passed, 2 deliberate skips** |
+| Horizontal overflow | `.local/shots71.mjs` | `scrollWidth === clientWidth` at 320 / 390 / 768 / 1280 / 1440, on intake and on a result |
+
+No assertion was changed in this round. One helper was: three examples now sit on the first screen and the
+other five behind **More examples**, so `caseButton()` opens that disclosure before returning the locator:
+
+```ts
+if (!(await target.isVisible().catch(() => false))) {
+  await page.getByRole('button', { name: /More examples/ }).click();
+}
+```
+
+The same change made it async, which is why its four call sites now await it. Every `expect(...)` in
+`e2e/workbench.spec.ts` is byte-identical to the Phase 7 run, including the two mobile-only scenarios and
+the two deliberate skips.
+
+Screenshots for this round are in `docs/screenshots/phase7.1/`, with `before-*.png` carried over from the
+Phase 7 build for comparison.
+
 ## 7. Credential-handling review of the verification harness
 
 Requested explicitly, so it is answered explicitly rather than implied by "the scripts print no secrets".

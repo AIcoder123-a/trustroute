@@ -48,20 +48,20 @@ function StageRow({
           {icon}
         </span>
         <span className="truncate text-[13px] font-medium text-fg">{title}</span>
-        <span className="mono hidden shrink-0 text-[10.5px] text-fg-3 md:inline">{endpoint}</span>
+        <span className="mono hidden shrink-0 text-[11px] text-fg-3 md:inline">{endpoint}</span>
       </span>
 
       <span className="ml-auto flex shrink-0 items-center gap-2">
         {aside}
-        <span className="text-[12px] text-fg-2">{metric}</span>
+        <span className="text-[12.5px] text-fg-2">{metric}</span>
         {skipped ? null : (
           <>
-            <span className="mono hidden text-[10.5px] text-fg-3 sm:inline">{ms(stage.latencyMs)}</span>
+            <span className="mono hidden text-[11px] text-fg-3 sm:inline">{ms(stage.latencyMs)}</span>
+            {/* Quieter than the banner: the run already said the whole thing is
+                simulated, so this only has to mark the row, not shout. */}
             <span
-              className={`hidden rounded border px-1.5 py-px text-[9px] font-semibold uppercase tracking-[0.06em] sm:inline ${
-                stage.mode === 'live'
-                  ? 'border-pass-line bg-pass-soft text-pass'
-                  : 'border-review-line bg-review-soft text-review'
+              className={`hidden rounded border px-1.5 py-px text-[10.5px] font-medium uppercase tracking-[0.05em] sm:inline ${
+                stage.mode === 'live' ? 'border-pass-line text-pass' : 'border-line text-review'
               }`}
               title={stage.mode === 'live' ? 'Response from the Clocked API' : 'Produced locally — no API request'}
             >
@@ -82,12 +82,12 @@ function StageRow({
         <div className="flex gap-2.5 border-t border-line bg-surface-2/60 px-4 py-3">
           <AlertIcon size={14} className="mt-0.5 shrink-0 text-block" />
           <div className="min-w-0">
-            <div className="text-[12.5px] font-medium text-fg">
+            <div className="text-[13px] font-medium text-fg">
               {STAGE_STATUS_LABELS[stage.status]}
-              {stage.error?.code ? <span className="mono ml-1.5 text-[10.5px] text-fg-3">{stage.error.code}</span> : null}
+              {stage.error?.code ? <span className="mono ml-1.5 text-[11px] text-fg-3">{stage.error.code}</span> : null}
             </div>
-            <p className="mt-1 text-[12px] leading-relaxed text-fg-2">{stage.error?.message ?? 'No result was returned.'}</p>
-            <p className="mt-1 text-[11.5px] leading-relaxed text-fg-3">
+            <p className="mt-1 text-[12.5px] leading-relaxed text-fg-2">{stage.error?.message ?? 'No result was returned.'}</p>
+            <p className="mt-1 text-[12px] leading-relaxed text-fg-3">
               Policy consequence: this stage contributed nothing, so the run reports{' '}
               <span className="text-review">screening unavailable</span> and is held for manual review.
             </p>
@@ -120,7 +120,7 @@ function VerdictChip({ verdict }: { verdict: string }) {
         ? 'border-review-line bg-review-soft text-review'
         : 'border-pass-line bg-pass-soft text-pass';
   return (
-    <span className={`hidden rounded border px-1.5 py-[2px] text-[10.5px] font-medium sm:inline ${tone}`}>
+    <span className={`hidden rounded border px-1.5 py-[2px] text-[11px] font-medium sm:inline ${tone}`}>
       {verdict}
     </span>
   );
@@ -158,12 +158,12 @@ export function GuardCard({
       metric={stage.status === 'skipped' ? 'not requested' : data ? pct(data.injection) : '—'}
     >
       {!data ? (
-        <p className="text-[12px] text-fg-3">No Guard result.</p>
+        <p className="text-[12.5px] text-fg-3">No Guard result.</p>
       ) : (
         <div className="space-y-3">
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <span className="text-[24px] font-semibold leading-none tracking-tight text-fg">{pct(data.injection)}</span>
-            <span className="text-[12px] text-fg-3">
+            <span className="text-[12.5px] text-fg-3">
               {data.severity ? `severity ${data.severity}` : 'no severity returned'}
               {data.category ? ` · ${data.category}` : ''}
             </span>
@@ -177,7 +177,7 @@ export function GuardCard({
               tone={data.injection >= data.threshold ? 'block' : 'review'}
               thresholdLabel={thresholdCaption(stage.mode)}
             />
-            <div className="flex justify-between text-[10.5px] text-fg-3">
+            <div className="flex justify-between text-[11px] text-fg-3">
               <span>
                 {thresholdCaption(stage.mode)} {pct(data.threshold, 0)}
               </span>
@@ -221,9 +221,9 @@ export function ProtectCard({
       metric={stage.status === 'skipped' ? 'not requested' : data ? total === 0 ? 'none found' : `${total} ${total === 1 ? 'entity' : 'entities'}` : '—'}
     >
       {!data ? (
-        <p className="text-[12px] text-fg-3">No Protect result.</p>
+        <p className="text-[12.5px] text-fg-3">No Protect result.</p>
       ) : total === 0 ? (
-        <p className="text-[12px] leading-relaxed text-fg-2">
+        <p className="text-[12.5px] leading-relaxed text-fg-2">
           No personal data was found in this content. Protect can still miss data — masking applies to the findings
           returned, not to every possible sensitive fact.
         </p>
@@ -236,7 +236,7 @@ export function ProtectCard({
                 className={`tag ${isHighSensitivity(kind) ? 'border-review-line bg-review-soft text-review' : ''}`}
               >
                 <span className="mono text-[11px]">{kind}</span>
-                <span className="text-[10.5px] opacity-70">×{count}</span>
+                <span className="text-[11px] opacity-70">×{count}</span>
               </span>
             ))}
             <button
@@ -252,7 +252,7 @@ export function ProtectCard({
           <div className="overflow-hidden rounded-lg border border-line">
             <table className="w-full table-fixed border-collapse text-left">
               <thead>
-                <tr className="bg-surface-2 text-[10px] uppercase tracking-[0.06em] text-fg-3">
+                <tr className="bg-surface-2 text-[10.5px] uppercase tracking-[0.06em] text-fg-3">
                   <th className="w-[30%] px-2.5 py-1.5 font-semibold">Kind</th>
                   <th className="px-2.5 py-1.5 font-semibold">Matched value</th>
                   <th className="w-[22%] px-2.5 py-1.5 font-semibold">Offsets</th>
@@ -262,16 +262,16 @@ export function ProtectCard({
                 {data.entities.slice(0, 10).map((entity, index) => (
                   <tr key={`${entity.start}-${index}`} className="border-t border-line align-top">
                     <td className="px-2.5 py-1.5">
-                      <span className={`mono text-[11px] ${isHighSensitivity(entity.type) ? 'text-review' : 'text-accent'}`}>
+                      <span className={`mono text-[11.5px] ${isHighSensitivity(entity.type) ? 'text-review' : 'text-accent'}`}>
                         {entity.type}
                       </span>
                     </td>
                     <td className="px-2.5 py-1.5">
-                      <span className="mono break-all text-[11.5px] text-fg">
+                      <span className="mono break-all text-[12px] text-fg">
                         {reveal ? entity.value : '•'.repeat(Math.min(18, Math.max(4, entity.value.length)))}
                       </span>
                     </td>
-                    <td className="mono px-2.5 py-1.5 text-[10.5px] text-fg-3">
+                    <td className="mono px-2.5 py-1.5 text-[11px] text-fg-3">
                       {entity.start}–{entity.end}
                     </td>
                   </tr>
@@ -279,7 +279,7 @@ export function ProtectCard({
               </tbody>
             </table>
             {total > 10 ? (
-              <div className="border-t border-line bg-surface-2 px-2.5 py-1.5 text-[10.5px] text-fg-3">
+              <div className="border-t border-line bg-surface-2 px-2.5 py-1.5 text-[11px] text-fg-3">
                 Showing 10 of {total} findings.
               </div>
             ) : null}
@@ -310,14 +310,14 @@ export function InspectCard({
       metric={stage.status === 'skipped' ? 'not requested' : data ? pct(data.malicious) : '—'}
     >
       {!data ? (
-        <p className="text-[12px] leading-relaxed text-fg-3">
+        <p className="text-[12.5px] leading-relaxed text-fg-3">
           Inspect runs only for the “Script / command” content type. Nothing is executed — this is static analysis.
         </p>
       ) : (
         <div className="space-y-3">
           <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
             <span className="text-[24px] font-semibold leading-none tracking-tight text-fg">{pct(data.malicious)}</span>
-            <span className="text-[12px] text-fg-3">
+            <span className="text-[12.5px] text-fg-3">
               malicious · {pct(data.suspicious)} suspicious
               {data.category ? ` · ${data.category}` : ''}
             </span>
@@ -331,7 +331,7 @@ export function InspectCard({
               tone={(data.malicious ?? 0) >= data.threshold ? 'block' : 'review'}
               thresholdLabel={thresholdCaption(stage.mode)}
             />
-            <div className="flex justify-between text-[10.5px] text-fg-3">
+            <div className="flex justify-between text-[11px] text-fg-3">
               <span>
                 {thresholdCaption(stage.mode)} {pct(data.threshold, 0)}
               </span>
@@ -342,10 +342,10 @@ export function InspectCard({
           {data.evidence.length > 0 ? (
             <EvidencePointer count={data.evidence.length} noun="flagged line" />
           ) : (
-            <p className="text-[11.5px] text-fg-3">No specific lines were flagged.</p>
+            <p className="text-[12px] text-fg-3">No specific lines were flagged.</p>
           )}
 
-          <p className="text-[11px] text-fg-3">Static assessment only. A benign verdict is not an execution authorization.</p>
+          <p className="text-[11.5px] text-fg-3">Static assessment only. A benign verdict is not an execution authorization.</p>
         </div>
       )}
     </StageRow>

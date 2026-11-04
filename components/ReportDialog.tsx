@@ -88,7 +88,7 @@ export function ReportDialog({
             </div>
             <div className="shrink-0 text-right">
               <DecisionBadge decision={report.decision.decision as Decision} large />
-              <div className="mt-1.5 text-[10.5px] text-fg-3">
+              <div className="mt-1.5 text-[11px] text-fg-3">
                 {report.generator.transport === 'live' ? 'Live Clocked API' : 'SIMULATED RESULTS — not Clocked output'}
               </div>
             </div>
@@ -218,7 +218,7 @@ export function ReportDialog({
             <summary className="cursor-pointer px-3 py-2 text-[11.5px] font-medium text-fg-2">
               Raw JSON ({json.length.toLocaleString()} characters)
             </summary>
-            <pre className="report-code mono scroll-thin max-h-64 overflow-auto border-t border-line bg-canvas px-3 py-2.5 text-[10.5px] leading-relaxed text-fg-3">
+            <pre className="report-code mono scroll-thin max-h-64 overflow-auto border-t border-line bg-canvas px-3 py-2.5 text-[11px] leading-relaxed text-fg-3">
               {json}
             </pre>
           </details>

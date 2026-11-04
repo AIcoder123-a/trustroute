@@ -149,10 +149,20 @@
     border-radius: 10px;
   }
 
+  /*
+   * Type scale, so the interface stops inventing a new size per component.
+   *
+   *   display 30/38   the one headline
+   *   lead    14.5    the one paragraph under it
+   *   body    13.5    reading text
+   *   body-2  12.5    compact rows, table cells
+   *   meta    11.5    captions, counts, provenance
+   *   micro   11      the floor — nothing smaller is set in prose
+   */
   .label {
-    font-size: 10.5px;
-    line-height: 1.2;
-    letter-spacing: 0.075em;
+    font-size: 11px;
+    line-height: 1.25;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
     font-weight: 600;
     color: var(--color-fg-3);
@@ -218,10 +228,31 @@
   }
 
   .btn-sm {
-    height: 30px;
-    padding: 0 10px;
+    height: 32px;
+    padding: 0 11px;
     font-size: 12px;
     border-radius: 7px;
+  }
+
+  /* The one action that starts a run. Bigger than the buttons beside it, and
+     the only filled button in the product. */
+  .btn-lg {
+    height: 40px;
+    padding: 0 18px;
+    font-size: 13.5px;
+    border-radius: 9px;
+  }
+
+  /* Touch, not mouse: a 32px control is fine to click and awkward to tap. */
+  @media (max-width: 640px) {
+    .btn-sm {
+      height: 36px;
+      padding: 0 12px;
+      font-size: 12.5px;
+    }
+    .btn-lg {
+      height: 44px;
+    }
   }
 
   .tag {

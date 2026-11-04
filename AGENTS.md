@@ -23,7 +23,7 @@ app/
   api/audit/route.ts    GET  — last 10 content-free audit records (session trail)
 components/             UI (client components); Workbench.tsx orchestrates
   Workbench.tsx         two levels: Intake (no result) and Results (result); owns all request state
-  CasePicker.tsx        demo cases as chips + the content-type segmented control
+  CasePicker.tsx        three demo cases on the first screen, the rest behind "More examples"; content-type tabs
   ContentView.tsx       the dark reader: source with highlights, forwarded copy, mask map
   EvidencePanel.tsx     passage-level evidence for Guard + Inspect, click to locate in the source
   DecisionPanel.tsx     ResultSummary (the band), InsightRail (why / next / checkpoint), DecisionPrimer
@@ -118,8 +118,13 @@ Playwright downloads browsers once: `npx playwright install chromium`.
   only dark surface. `components/ui.tsx` holds the shared decision colours and the probability meter.
 - A failed detection renders its consequence inline and cannot be collapsed; a skipped one reads
   "not requested" rather than borrowing the failure language.
+- The first screen stays thin on purpose: one headline, one input, one primary action, three examples.
+  Reference material (the outcome primer, the session trail) is collapsed or absent until it has
+  something to say. `CasePicker` keeps the other five cases behind "More examples".
+- Type scale lives in `app/globals.css` §`.label` (11 / 11.5 / 12.5 / 13.5 / 14.5 / 30–38). Nothing in
+  prose is set below 11px; `btn-sm` grows to 36px and `btn-lg` to 44px under 640px for tap targets.
 
-## 6. Current state (2026-11-03)
+## 6. Current state (2026-11-04)
 
 | Area | State |
 | --- | --- |

@@ -3,7 +3,6 @@
 import type { AnalyzeResponse } from '@/lib/types';
 import { buildEvidenceRows, type EvidenceRow } from '@/lib/evidence';
 import { pct } from '@/lib/format';
-import { evidenceBadge } from '@/lib/copy';
 import { ChevronRightIcon } from '@/components/icons';
 
 /**
@@ -29,7 +28,6 @@ export function EvidencePanel({
     guard: result.stages.guard.data,
     inspect: result.stages.inspect.data,
   });
-  const badge = evidenceBadge(result.mode);
   const entityCount = result.stages.protect.data?.entities.length ?? 0;
   // Protect is included: a failed Protect leaves the same hole in the evidence
   // as a failed Guard, and calling that "no passage returned" would be too mild.
@@ -43,15 +41,10 @@ export function EvidencePanel({
     <section id="evidence" className="card scroll-mt-32 overflow-hidden" aria-label="Evidence">
       <header className="flex flex-wrap items-center gap-x-2.5 gap-y-1 px-4 py-2.5">
         <h2 className="text-[13px] font-semibold tracking-tight text-fg">Evidence</h2>
-        <span className="mono text-[11px] text-fg-3">
+        <span className="mono text-[11.5px] text-fg-3">
           {rows.length} {rows.length === 1 ? 'passage' : 'passages'}
         </span>
-        {badge ? (
-          <span className="rounded border border-review-line bg-review-soft px-1.5 py-px text-[9.5px] font-semibold uppercase tracking-[0.06em] text-review">
-            {badge}
-          </span>
-        ) : null}
-        <span className="ml-auto hidden text-[11px] text-fg-3 sm:inline">Click a row to locate it in the source</span>
+        <span className="ml-auto hidden text-[11.5px] text-fg-3 sm:inline">Click a row to locate it in the source</span>
       </header>
 
       {rows.length === 0 ? (
@@ -80,7 +73,7 @@ export function EvidencePanel({
                   }`}
                 >
                   <span
-                    className={`mt-[2px] w-[52px] shrink-0 text-[9.5px] font-semibold uppercase tracking-[0.07em] ${
+                    className={`mt-[3px] w-[56px] shrink-0 text-[11px] font-semibold uppercase tracking-[0.06em] ${
                       row.source === 'guard' ? 'text-block' : 'text-review'
                     }`}
                   >
@@ -88,14 +81,16 @@ export function EvidencePanel({
                   </span>
 
                   <span className="min-w-0 flex-1">
-                    <span className="mono block break-words text-[12px] leading-[1.6] text-fg">“{row.excerpt}”</span>
-                    <span className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[10.5px] text-fg-3">
+                    <span className="mono block break-words text-[12.5px] leading-[1.65] text-fg">“{row.excerpt}”</span>
+                    <span className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11.5px] text-fg-3">
                       {row.placeable ? (
                         <span className="mono text-fg-2">L{row.line}</span>
                       ) : (
                         <span className="text-review">offsets outside the text — not placed</span>
                       )}
-                      {row.confidence !== null ? <span>confidence {pct(row.confidence, 0)}</span> : null}
+                      {row.confidence !== null ? (
+                        <span title="Detector confidence">{pct(row.confidence, 0)}</span>
+                      ) : null}
                       <span className="truncate">{row.label}</span>
                     </span>
                   </span>

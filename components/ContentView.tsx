@@ -159,7 +159,7 @@ export function ContentView({
               }`}
             >
               {tab === 'original' ? 'As received' : 'Forwarded copy'}
-              {tab === 'masked' ? <span className="mono ml-1.5 text-[10.5px] text-fg-3">{appliedCount}</span> : null}
+              {tab === 'masked' ? <span className="mono ml-1.5 text-[11px] text-fg-3">{appliedCount}</span> : null}
             </button>
           ))}
         </div>
@@ -180,12 +180,12 @@ export function ContentView({
       </header>
 
       {result && entityCount > 0 ? (
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-line bg-surface-2/50 px-4 py-1.5">
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-t border-line bg-surface-2/50 px-4 py-1.5">
           <span className="text-[11.5px] text-fg-2">
             <span className="mono text-fg">{appliedCount}</span> value{appliedCount === 1 ? '' : 's'} masked
           </span>
           <span className="text-[11px] text-fg-3" title={comparisonTooltip(result.mode)}>
-            · {comparisonLabel(result.mode, result.redaction.apiComparison)}
+            {comparisonLabel(result.mode, result.redaction.apiComparison)}
           </span>
           <button
             type="button"
@@ -215,7 +215,7 @@ export function ContentView({
                 {group.type}
               </span>
               <span className="mono text-[11px] text-fg-2">{group.token}</span>
-              <span className="mono text-[10.5px] text-fg-3">×{group.count}</span>
+              <span className="mono text-[11px] text-fg-3">×{group.count}</span>
             </button>
           ))}
         </div>
@@ -227,7 +227,7 @@ export function ContentView({
       >
         {view === 'masked' ? (
           masked ? (
-            <pre className="mono whitespace-pre-wrap break-words text-[12px] leading-[1.8] text-code-fg sm:text-[13px]">
+            <pre className="mono whitespace-pre-wrap break-words text-[12.5px] leading-[1.75] text-code-fg sm:text-[13px]">
               {maskedParts.map((part, index) =>
                 part.token ? (
                   <mark
@@ -250,7 +250,7 @@ export function ContentView({
             </div>
           )
         ) : (
-          <pre className="mono whitespace-pre-wrap break-words text-[12px] leading-[1.8] text-code-fg sm:text-[13px]-2">
+          <pre className="mono whitespace-pre-wrap break-words text-[12.5px] leading-[1.75] text-code-fg sm:text-[13px]">
             {result
               ? segments.map((segment, index) =>
                   segment.kind === 'plain' ? (

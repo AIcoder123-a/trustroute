@@ -85,15 +85,18 @@ const CASES = {
   review: 'Script needing review',
 } as const;
 
-function caseButton(page: import('@playwright/test').Page, title: string) {
-  // The rail and the mobile strip render the same cases; only one is visible.
-  return page
-    .locator('[data-testid="case-list"]:visible')
-    .getByRole('button', { name: new RegExp(title) });
+async function caseButton(page: import('@playwright/test').Page, title: string) {
+  // Three examples are on the first screen; the other five sit behind "More
+  // examples". Only one case list is visible (desktop and mobile differ).
+  const target = page.locator('[data-testid="case-list"]:visible').getByRole('button', { name: new RegExp(title) });
+  if (!(await target.isVisible().catch(() => false))) {
+    await page.getByRole('button', { name: /More examples/ }).click();
+  }
+  return target;
 }
 
 async function loadAndScreen(page: import('@playwright/test').Page, title: string) {
-  await caseButton(page, title).click();
+  await (await caseButton(page, title)).click();
   await page.getByRole('button', { name: /Screen content/ }).click();
   await expect(page.getByTestId('decision-badge')).toBeVisible({ timeout: 30_000 });
 }
@@ -355,7 +358,7 @@ test.describe('TrustRoute workbench', () => {
         }),
       }),
     );
-    await caseButton(page, CASES.safe).click();
+    await (await caseButton(page, CASES.safe)).click();
     await page.getByRole('button', { name: /Screen content/ }).click();
 
     await expect(page.getByRole('alert').filter({ hasText: 'Screening unavailable' })).toBeVisible();
@@ -376,7 +379,7 @@ test.describe('TrustRoute workbench', () => {
         // The page cancelled first, which is the point of the test.
       }
     });
-    await caseButton(page, CASES.safe).click();
+    await (await caseButton(page, CASES.safe)).click();
     await page.getByRole('button', { name: /Screen content/ }).click();
 
     // Cancel only exists while a screen is in flight — so its presence is the
@@ -401,7 +404,7 @@ test.describe('TrustRoute workbench', () => {
   test('reports a failed request instead of a decision', async ({ page }) => {
     await page.goto('/');
     await page.route('**/api/analyze', (route) => route.abort('failed'));
-    await caseButton(page, CASES.safe).click();
+    await (await caseButton(page, CASES.safe)).click();
     await page.getByRole('button', { name: /Screen content/ }).click();
 
     // Next.js injects its own `role="alert"` route announcer, so match by content.

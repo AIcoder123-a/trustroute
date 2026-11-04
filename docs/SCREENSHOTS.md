@@ -9,6 +9,10 @@ pair records what the layout looked like before the Phase 7 redesign.
 
 ## 1. The story screens (Phase 7 layout, 2026-11-03)
 
+> These were captured before the Phase 7.1 polish pass. The current first screen and result screens are in
+> `phase7.1/` — three examples instead of eight on the first screen, no empty session trail, and the
+> outcome primer closed. Behaviour is unchanged, so these images still describe what the product does.
+
 | File | Viewport | Mode | What it shows |
 | --- | --- | --- | --- |
 | `landing.png` | 1440×900 | simulated | The first screen after the redesign: one statement, one input, one primary action, eight synthetic cases as chips, and a quiet rail that explains PASS / REVIEW / BLOCK before anything is loaded. No step cards, no tutorial column. |
@@ -45,6 +49,7 @@ checks can never produce. No credit was spent — the refusal happens before aut
 | --- | --- |
 | `phase7-before/` | `landing.png` and `result.png` from the previous dark three-column layout, captured 2026-11-03 immediately before the rewrite |
 | `phase7-after/` | The same two states from the new layout, same viewport, same case, same mode |
+| `phase7.1/` | The final polish pass (2026-11-04): `01-intake-1440`, `02-block-1440`, `03-pii-masked-1440`, `04-review-1440`, `05-intake-390`, `06-block-320`, `07-review-390`, plus `before-intake` / `before-result` carried over from the Phase 7 build |
 
 The pair exists so the visual claims in `docs/TEST_REPORT.md` §7 can be checked rather than taken on
 trust. Both halves are 1440×900, simulated mode, and show the *Classic prompt injection* case.
