@@ -331,3 +331,33 @@ Two operational consequences of the same design, both measured on 2026-11-01:
   may see an empty list. Nothing security-relevant depends on it — the records are content-free by design —
   but it is a fidelity limit of this host, not a bug, and the fix would be the same shared store the
   counters already use.
+
+### 14.1 A Redis failure now names itself (2026-11-07)
+
+The bullet above was written while every Redis problem produced the same `503`, with nothing in the
+function log — which is the state that made the first live deployment undiagnosable. `lib/redis-rest.ts`
+now throws a `RedisCallError` carrying one code from a closed set, and writes exactly one line per failed
+call:
+
+```
+[trustroute] redis failure code=redis_http_401 op=quota status=401 ms=6
+```
+
+| Code | Means | Usual cause |
+| --- | --- | --- |
+| `redis_bad_url` | the configured value is not an `http(s)` URL; nothing was sent | quotes, a `redis://` connection string, a missing scheme |
+| `redis_http_401` | the endpoint rejected the bearer token | token from another database, or a rotated token |
+| `redis_http_403` | the endpoint refused the operation | a read-only token, or a disabled database |
+| `redis_http_4xx` | the command was rejected | wrong protocol shape, unsupported command |
+| `redis_http_5xx` | the endpoint failed | upstream fault |
+| `redis_body_error` | HTTP 200 with `{"error": …}` inside | a Lua runtime error (the status code alone would have looked fine) |
+| `redis_unreadable_body` | HTTP 200 that is not JSON | a proxy or block page in the path |
+| `redis_bad_shape` | `result` missing, or not the shape the counter expects | a reply this client does not understand — refused rather than guessed |
+| `redis_timeout` | exceeded the 3 s budget | endpoint slow or unreachable with a hanging socket |
+| `redis_network` | the request never completed | DNS, TLS, egress blocked |
+
+The line carries a code, a stage (`quota` / `window` / `turnstile`), an HTTP status and a duration. It
+never carries the endpoint, the token, the command, the script or the caller's text: the values come from
+a closed set, and `tests/redis-rest.test.ts` asserts that the host name, the token, `INCR` and the quota
+key name cannot appear in it. Behaviour is unchanged — the route still answers `503 quota_unavailable`,
+nothing is screened, and a failed window still degrades to the in-process counter.

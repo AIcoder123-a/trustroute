@@ -28,7 +28,7 @@
 import { createHash } from 'node:crypto';
 
 import { LIMITS } from './config';
-import { redisCommand } from './redis-rest';
+import { RedisCallError, logRedisFailure, redisCommand } from './redis-rest';
 
 export type WindowStore = 'redis' | 'memory';
 
@@ -85,10 +85,14 @@ export async function consumeWindow(
   const count = Number(
     await redisCommand({
       command: ['EVAL', WINDOW_SCRIPT, 1, windowKey(callerKey, now), LIMITS.windowMs],
+      op: 'window',
       fetchImpl: options.fetchImpl,
     }),
   );
-  if (!Number.isFinite(count)) throw new Error('Unexpected window count');
+  if (!Number.isFinite(count)) {
+    logRedisFailure('redis_bad_shape', 'window');
+    throw new RedisCallError('redis_bad_shape');
+  }
 
   const allowed = count <= limit;
   return {

@@ -97,6 +97,7 @@ async function claim(token: string, now: number, fetchImpl?: typeof fetch): Prom
     try {
       const result = await redisCommand({
         command: ['SET', `trustroute:turnstile:${id}`, '1', 'NX', 'PX', CLAIM_TTL_SECONDS * 1000],
+        op: 'turnstile',
         fetchImpl,
       });
       // `SET … NX` answers 'OK' when the key was created, null when it existed.

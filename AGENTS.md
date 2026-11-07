@@ -123,6 +123,9 @@ Playwright downloads browsers once: `npx playwright install chromium`.
   something to say. `CasePicker` keeps the other five cases behind "More examples".
 - Type scale lives in `app/globals.css` §`.label` (11 / 11.5 / 12.5 / 13.5 / 14.5 / 30–38). Nothing in
   prose is set below 11px; `btn-sm` grows to 36px and `btn-lg` to 44px under 640px for tap targets.
+- Every Redis failure throws a `RedisCallError` with a code from the closed set in `lib/redis-rest.ts`, and
+  writes exactly one `[trustroute] redis failure code=… op=… status=… ms=…` line. Nothing else goes in that
+  line: no endpoint, token, command, script or caller text. Add a code rather than a free-form message.
 
 ## 6. Current state (2026-11-04)
 

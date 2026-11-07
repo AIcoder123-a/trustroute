@@ -19,7 +19,7 @@
  */
 
 import { LIMITS } from './config';
-import { redisCommand, redisConfigured } from './redis-rest';
+import { RedisCallError, logRedisFailure, redisCommand, redisConfigured } from './redis-rest';
 
 export type QuotaStore = 'redis' | 'memory';
 export type QuotaReason = 'ok' | 'exhausted' | 'store_unavailable';
@@ -109,12 +109,19 @@ export async function consumeQuota(
   try {
     const result = await redisCommand({
       command: ['EVAL', CONSUME_SCRIPT, 1, quotaKey(now), ttl, limit],
+      op: 'quota',
       fetchImpl: options.fetchImpl,
     });
-    if (!Array.isArray(result) || result.length !== 2) throw new Error('Unexpected quota reply');
+    if (!Array.isArray(result) || result.length !== 2) {
+      logRedisFailure('redis_bad_shape', 'quota');
+      throw new RedisCallError('redis_bad_shape');
+    }
     const count = Number(result[0]);
     const allowed = Number(result[1]) === 1;
-    if (!Number.isFinite(count)) throw new Error('Unexpected quota count');
+    if (!Number.isFinite(count)) {
+      logRedisFailure('redis_bad_shape', 'quota');
+      throw new RedisCallError('redis_bad_shape');
+    }
     return {
       allowed,
       reason: allowed ? 'ok' : 'exhausted',
@@ -123,9 +130,14 @@ export async function consumeQuota(
       store: 'redis',
       retryAfterSeconds: allowed ? 0 : ttl,
     };
-  } catch {
+  } catch (error) {
     // Fail closed. An unreachable counter means the ceiling is unknown, and an
     // unknown ceiling on somebody else's credit balance is not a risk worth taking.
+    //
+    // The reason itself is already on the log line `redis-rest` wrote, or was
+    // written just above; only an error that bypassed both is reported here, so
+    // one failed call never produces two lines.
+    if (!(error instanceof RedisCallError)) logRedisFailure('redis_network', 'quota');
     return {
       allowed: false,
       reason: 'store_unavailable',
