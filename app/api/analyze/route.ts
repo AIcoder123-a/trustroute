@@ -7,6 +7,7 @@ import { checkOrigin } from '@/lib/origin';
 import { analyze } from '@/lib/pipeline';
 import { consumeQuota } from '@/lib/quota';
 import { callerIdentity } from '@/lib/ratelimit';
+import { ensureSession } from '@/lib/session';
 import { verifyTurnstile } from '@/lib/turnstile';
 import { validateAnalyzeInput } from '@/lib/validate';
 
@@ -177,7 +178,8 @@ export async function POST(request: Request) {
       return rateLimited('daily_budget', quota.retryAfterSeconds, quota.remaining);
     }
 
-    const result = await analyze(validated.value);
+    const sessionId = await ensureSession();
+    const result = await analyze(validated.value, { sessionId });
     return NextResponse.json(result, {
       status: 200,
       headers: {

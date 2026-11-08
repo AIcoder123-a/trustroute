@@ -30,8 +30,14 @@ export function ReportDialog({
   }, [onClose]);
 
   const json = reportToJson(report);
+  const policyDecision = report.decision.decision;
   const effective = report.review?.decisionAfter ?? report.decision.decision;
-  const blocked = effective === 'BLOCK';
+  /**
+   * A blocked run stays blocked in the sheet even if a later state were somehow
+   * different: the policy verdict is the fact the sheet is reporting, and a
+   * sanitized copy under a block is a preview, never a forwarded message.
+   */
+  const blocked = policyDecision === 'BLOCK' || effective === 'BLOCK';
 
   return (
     <div
@@ -89,15 +95,26 @@ export function ReportDialog({
               </p>
             </div>
             <div className="shrink-0 text-right">
-              <DecisionBadge decision={report.decision.decision as Decision} large />
+              <DecisionBadge decision={effective as Decision} large />
               <div className="mt-1.5 text-[11px] text-fg-3">
+                {effective === policyDecision
+                  ? 'policy decision'
+                  : `policy said ${policyDecision} · reviewer moved it to ${effective}`}
+              </div>
+              <div className="mt-1 text-[11px] text-fg-3">
                 {report.generator.transport === 'live' ? 'Live Clocked API' : 'SIMULATED RESULTS — not Clocked output'}
               </div>
             </div>
           </div>
 
           <p className="rounded-lg border border-line bg-surface-2 px-3 py-2.5 text-[12.5px] leading-relaxed text-fg-2">
-            {report.decision.headline}
+            {/* The policy headline describes the pre-review state; once a review
+                exists the sheet must not claim the run is still held. */}
+            {report.review
+              ? report.review.action === 'approve'
+                ? `Approved by a reviewer. Policy had held this run at ${policyDecision}; TrustRoute itself sent nothing.`
+                : `Rejected by a reviewer. Policy said ${policyDecision}; the content stays blocked inside TrustRoute.`
+              : report.decision.headline}
           </p>
 
           <section>

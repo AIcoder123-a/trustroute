@@ -5,9 +5,14 @@ import { CONTENT_TYPE_LABELS } from '@/lib/types';
 import { clockTime } from '@/lib/format';
 import { DECISION_STYLE } from '@/components/ui';
 
+/**
+ * The review tag names the state a reviewer moved the run to. The decision
+ * printed beside it is the policy verdict and is never rewritten, so one line
+ * carries both facts: what the engine said, and what a person did about it.
+ */
 const ACTION_LABEL: Record<string, string> = {
-  approve: 'approved',
-  reject: 'rejected',
+  approve: 'reviewed → PASS',
+  reject: 'reviewed → BLOCK',
   recheck: 'rechecked',
 };
 

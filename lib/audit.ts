@@ -46,8 +46,26 @@ export function recordReview(params: {
   return event;
 }
 
-export function listAudit(limit = 20): AuditRecord[] {
-  return audit.slice(0, limit);
+/**
+ * Recent screens, newest first.
+ *
+ * `sessionId` scopes the result to the caller's own bucket. The route always
+ * passes one; omitting it is for tests that drive the pipeline directly.
+ */
+export function listAudit(limit = 20, sessionId?: string | null): AuditRecord[] {
+  const scoped = sessionId === undefined ? audit : audit.filter((item) => item.sessionId === sessionId);
+  return scoped.slice(0, limit);
+}
+
+/**
+ * The authoritative record for one run.
+ *
+ * The review route reads the policy decision and the screening state from here
+ * rather than from the request body: what a client claims about a run is not
+ * evidence about that run.
+ */
+export function findAuditRecord(runId: string): AuditRecord | undefined {
+  return audit.find((item) => item.runId === runId);
 }
 
 export function findReview(runId: string): ReviewEvent | undefined {

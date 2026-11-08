@@ -17,7 +17,14 @@ import { pushAudit } from './audit';
 import type { AnalyzeResponse, DetectionKind, GuardData, InspectData, ProtectData, StageStatus } from './types';
 import type { ValidAnalyzeInput } from './validate';
 
-export async function analyze(input: ValidAnalyzeInput): Promise<AnalyzeResponse> {
+export async function analyze(
+  input: ValidAnalyzeInput,
+  /**
+   * The caller's audit bucket. Optional so unit tests can drive the pipeline
+   * directly; the HTTP route always supplies one.
+   */
+  options: { sessionId?: string | null } = {},
+): Promise<AnalyzeResponse> {
   const startedAt = performance.now();
   const mode = resolveRunMode();
   const instructions = input.instructions ?? DEFAULT_INSTRUCTIONS[input.contentType];
@@ -102,6 +109,10 @@ export async function analyze(input: ValidAnalyzeInput): Promise<AnalyzeResponse
     textHash: response.input.textHash,
     characters: response.input.characters,
     decision: policy.decision,
+    // Recorded here, from the engine's own output, so the review route never
+    // has to infer "was this fully screened" from a client's description.
+    screening: policy.screening,
+    sessionId: options.sessionId ?? null,
     stageStatuses: statuses,
     entityCount: protect.data?.entities.length ?? 0,
     guardInjection: (guard.data as GuardData | null)?.injection ?? null,

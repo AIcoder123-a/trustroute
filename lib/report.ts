@@ -38,6 +38,8 @@ export interface ReviewReport {
   }[];
   decision: {
     decision: string;
+    /** The final state after a legitimate review; equals `decision` when none. */
+    effectiveDecision: string;
     headline: string;
     /** `unavailable` when a required detection did not complete. */
     screening: string;
@@ -186,7 +188,15 @@ export function buildReport(result: AnalyzeResponse, review: ReviewEvent | null)
     },
     screening,
     decision: {
+      /** The policy engine's verdict. A review never rewrites this field. */
       decision: result.policy.decision,
+      /**
+       * The state a reviewer legitimately moved the run to, if any. Kept beside
+       * the policy verdict rather than replacing it: a report that showed only
+       * the final state could not be audited, and one that showed only the
+       * policy verdict could not explain what the reviewer did.
+       */
+      effectiveDecision: review?.decisionAfter ?? result.policy.decision,
       headline: result.policy.headline,
       screening: result.policy.screening,
       degraded: result.policy.degraded,

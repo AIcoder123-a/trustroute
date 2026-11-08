@@ -3,7 +3,7 @@
 import { useState } from 'react';
 
 import type { AnalyzeResponse, Decision, PolicyCheckOutcome, ReviewEvent } from '@/lib/types';
-import { MIN_REJECT_NOTE, REVIEW_NOTE_MAX } from '@/lib/review';
+import { MIN_REJECT_NOTE, REVIEW_NOTE_MAX, approvalBlockedReason, canApprove } from '@/lib/review';
 import { clockTime, ms, pct } from '@/lib/format';
 import { creditsValue, runOriginLabel } from '@/lib/copy';
 import { DECISION_STYLE, DecisionBadge, UnavailableBadge } from '@/components/ui';
@@ -15,6 +15,7 @@ import {
   DocumentIcon,
   DownloadIcon,
   InfoIcon,
+  LockIcon,
   PlusIcon,
   PrintIcon,
   RefreshIcon,
@@ -133,7 +134,7 @@ export function ResultSummary({
   const unavailable = policy.screening === 'unavailable' && !overridden;
   const headline = overridden
     ? review.action === 'approve'
-      ? 'Approved by a reviewer. The masked copy may now be forwarded; nothing was executed.'
+      ? 'Approved by a reviewer. The masked copy is cleared for release — TrustRoute itself sent nothing.'
       : 'Rejected by a reviewer. The content stays inside TrustRoute.'
     : policy.headline;
 
@@ -146,7 +147,13 @@ export function ResultSummary({
         role="status"
         aria-live="polite"
         aria-atomic="true"
-        aria-label={`Screening decision: ${unavailable ? 'screening unavailable, manual review required' : effective}`}
+        aria-label={
+          unavailable
+            ? 'Screening decision: screening unavailable, manual review required'
+            : overridden
+              ? `Screening decision: ${effective}, reviewer override of policy ${policy.decision}`
+              : `Screening decision: ${effective}`
+        }
         data-screening={policy.screening}
       >
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -296,17 +303,26 @@ export function InsightRail({
   const [note, setNote] = useState('');
   const [showOverride, setShowOverride] = useState(false);
   const { policy } = result;
-  const effective: Decision = review?.decisionAfter ?? policy.decision;
   const trimmed = note.trim();
   const noteIsEnough = trimmed.length >= MIN_REJECT_NOTE;
-  const needsHuman = effective === 'REVIEW' && review === null;
+  /**
+   * Approval exists for one thing: resolving a REVIEW. It is deliberately not
+   * offered for a block (final by definition) or for a run whose required
+   * detections did not complete (there is no verdict to approve). The button
+   * state, its tooltip and the sentence under it all come from this one pair of
+   * facts, so they cannot disagree.
+   */
+  const approvable = canApprove(policy.decision, policy.screening);
+  const approvalReason = approvalBlockedReason(policy.decision, policy.screening);
+  const policyBlocked = policy.decision === 'BLOCK';
+  const needsHuman = approvable && review === null;
   /**
    * A PASS has nothing for a reviewer to decide: the engine already let the
    * content through, and an empty note box beside two disabled-looking buttons
    * reads as a step that was skipped. The override stays one click away, so the
    * capability is unchanged — only the default surface is quieter.
    */
-  const noHumanNeeded = effective === 'PASS' && review === null;
+  const noHumanNeeded = policy.decision === 'PASS' && review === null;
   const blockingChecks = policy.checks.filter((item) => item.outcome === 'block' || item.outcome === 'failed').length;
 
   return (
@@ -418,7 +434,24 @@ export function InsightRail({
             </div>
             {review.note ? <p className="mt-1 text-[12px] leading-relaxed text-fg-2">{review.note}</p> : null}
             <p className="mt-1 text-[11px] leading-relaxed text-fg-3">
-              Internal state only. Nothing outside TrustRoute was approved, executed or sent.
+              Policy said {review.decisionBefore}; the reviewer moved it to {review.decisionAfter}. Internal state
+              only — nothing outside TrustRoute was approved, executed or sent.
+            </p>
+          </div>
+        ) : policyBlocked ? (
+          /**
+           * No approval control exists for a block. Not a disabled button — an
+           * absent one, because "disabled" invites a reader to look for the
+           * permission that would enable it, and there is none.
+           */
+          <div className="rounded-lg border border-block-line bg-block-soft px-3 py-2.5">
+            <p className="flex items-center gap-1.5 text-[12px] font-semibold text-block">
+              <LockIcon size={12} />
+              Blocked by policy · no approval available
+            </p>
+            <p className="mt-1 text-[11.5px] leading-relaxed text-[#7a2a2f]">
+              A block is final at this gateway. There is no approve action on a blocked run — the decision cannot be
+              changed from this page, and nothing from it is forwarded.
             </p>
           </div>
         ) : noHumanNeeded && !showOverride ? (
@@ -432,6 +465,14 @@ export function InsightRail({
           </div>
         ) : (
           <div className="space-y-2">
+            {approvable ? null : (
+              <p
+                data-testid="approval-blocked-reason"
+                className="rounded-lg border border-review-line bg-review-soft px-2.5 py-2 text-[11.5px] leading-relaxed text-review"
+              >
+                {approvalReason}
+              </p>
+            )}
             <label className="block">
               <span className="mb-1 block text-[11.5px] text-fg-3">
                 Reviewer note <span className="text-fg-3/80">· required to reject</span>
@@ -455,8 +496,9 @@ export function InsightRail({
                   onApprove(trimmed);
                   setNote('');
                 }}
-                disabled={busy || policy.decision === 'PASS'}
-                title={policy.decision === 'PASS' ? 'Nothing to approve: policy already passed this content.' : undefined}
+                disabled={busy || !approvable}
+                aria-label={approvable ? 'Approve' : `Approve unavailable — ${approvalReason ?? 'not permitted'}`}
+                title={approvalReason ?? undefined}
               >
                 <CheckIcon size={13} className={needsHuman ? '' : 'text-pass'} />
                 Approve
@@ -468,14 +510,8 @@ export function InsightRail({
                   onReject(trimmed);
                   setNote('');
                 }}
-                disabled={busy || policy.decision === 'BLOCK' || !noteIsEnough}
-                title={
-                  policy.decision === 'BLOCK'
-                    ? 'Already blocked by policy.'
-                    : noteIsEnough
-                      ? undefined
-                      : `Add at least ${MIN_REJECT_NOTE} characters of reasoning to reject.`
-                }
+                disabled={busy || !noteIsEnough}
+                title={noteIsEnough ? undefined : `Add at least ${MIN_REJECT_NOTE} characters of reasoning to reject.`}
               >
                 <XIcon size={13} className="text-block" />
                 Reject
@@ -493,10 +529,12 @@ export function InsightRail({
           </div>
         )}
 
-        <p className="mt-2 text-[11px] leading-relaxed text-fg-3">
-          Approval changes TrustRoute&apos;s internal routing state only. It does not execute the script, send the
-          message or act on the content.
-        </p>
+        {policyBlocked ? null : (
+          <p className="mt-2 text-[11px] leading-relaxed text-fg-3">
+            Approval changes TrustRoute&apos;s internal routing state only. It does not execute the script, send the
+            message or act on the content.
+          </p>
+        )}
       </section>
     </div>
   );

@@ -156,7 +156,7 @@ test.describe('TrustRoute workbench', () => {
 
     await page.getByRole('button', { name: 'Approve' }).click();
     await expect(page.getByText(/reviewer override/)).toBeVisible();
-    await expect(page.getByText(/Approved internally/)).toBeVisible();
+    await expect(page.getByText(/Approval recorded/)).toBeVisible();
     await expect(page.getByTestId('decision-badge')).toHaveText(/PASS/);
     await expect(page.getByText(/Approved by a reviewer/)).toBeVisible();
   });

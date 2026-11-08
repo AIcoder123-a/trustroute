@@ -256,7 +256,11 @@ export function ContentView({
                   <mark
                     key={index}
                     className="rounded-[3px] bg-[#12352f] px-0.5 text-[#9fe8d6]"
-                    title="Replaced by TrustRoute before forwarding"
+                    title={
+                      blocked
+                        ? 'Replaced in this sanitized preview — the content is blocked and is not forwarded'
+                        : 'Replaced by TrustRoute before forwarding'
+                    }
                   >
                     {part.text}
                   </mark>

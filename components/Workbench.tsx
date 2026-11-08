@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { DEMO_CASES } from '@/lib/cases';
 import { buildReport } from '@/lib/report';
+import { planReview } from '@/lib/review';
 import { clockTime } from '@/lib/format';
 import { detectionFootnote, headerModeLabel, headerModeTitle } from '@/lib/copy';
 import type {
@@ -331,8 +332,27 @@ export function Workbench({
   const submitReview = useCallback(
     async (action: ReviewAction, note: string) => {
       if (!result) return;
-      const decisionBefore = result.policy.decision;
-      const decisionAfter = action === 'approve' ? 'PASS' : action === 'reject' ? 'BLOCK' : decisionBefore;
+      /**
+       * The same table the route enforces, applied before a request is made.
+       *
+       * This is not the security boundary — the route re-derives the facts from
+       * its own record — it is here so an impossible action never leaves the
+       * page, and so a stale tab explains itself instead of showing a server
+       * error. `planReview` returns the only outcome this run may reach, and an
+       * approval of a block is not among them.
+       */
+      const plan = planReview({
+        action,
+        policyDecision: result.policy.decision,
+        screening: result.policy.screening,
+        requestedAfter:
+          action === 'approve' ? 'PASS' : action === 'reject' ? 'BLOCK' : result.policy.decision,
+        alreadyReviewed: review !== null,
+      });
+      if (!plan.ok) {
+        setNotice(plan.message);
+        return;
+      }
 
       setReviewBusy(true);
       try {
@@ -343,8 +363,8 @@ export function Workbench({
             runId: result.runId,
             action,
             note: note.length > 0 ? note : null,
-            decisionBefore,
-            decisionAfter,
+            decisionBefore: result.policy.decision,
+            decisionAfter: plan.decisionAfter,
           }),
         });
         if (!response.ok) {
@@ -356,7 +376,7 @@ export function Workbench({
         void refreshAudit();
         setNotice(
           action === 'approve'
-            ? 'Approved internally. The content would now be released to the agent as the masked copy.'
+            ? 'Approval recorded. TrustRoute has not sent anything: it is a checkpoint, not a sender.'
             : action === 'reject'
               ? 'Rejected. The content stays blocked inside TrustRoute.'
               : 'Review recorded.',
@@ -371,7 +391,7 @@ export function Workbench({
         setReviewBusy(false);
       }
     },
-    [result, refreshAudit],
+    [result, review, refreshAudit],
   );
 
   const report = useMemo(() => (result ? buildReport(result, review) : null), [result, review]);

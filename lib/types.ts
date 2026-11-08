@@ -274,7 +274,15 @@ export interface AuditRecord {
   contentType: ContentType;
   textHash: string;
   characters: number;
+  /** The policy engine's own verdict. A review never rewrites this field. */
   decision: Decision;
+  /** Whether every required detection completed. Also produced by the engine. */
+  screening: ScreeningState;
+  /**
+   * Opaque browser-session bucket. Used to scope the trail to the visitor that
+   * produced it, so one visitor's review notes are not served to another.
+   */
+  sessionId: string | null;
   stageStatuses: Record<DetectionKind, StageStatus>;
   entityCount: number;
   guardInjection: number | null;
