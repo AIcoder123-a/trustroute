@@ -39,7 +39,7 @@ on what those agents are allowed to read.
    class of content loses its control: without Guard there is no block path for prose, without Protect
    there is no masked copy, without Inspect a script has no verdict.
 2. **The decision is ours, not the model's.** `lib/policy.ts` is a pure function with a documented
-   threshold table and 14 unit tests. Verdicts are shown next to it, never instead of it.
+   threshold table and its own test suite. Verdicts are shown next to it, never instead of it.
 3. **Masking is real.** The forwarded copy is rebuilt from Protect's spans with bounds checks, value
    re-anchoring, surrogate-pair safety and deterministic overlap resolution, then compared to Clocked's own
    `anonymized_text`. When masking cannot be trusted, the original is not released in its place.
@@ -75,8 +75,9 @@ Protect run for every content type; Inspect runs only when the content is a scri
   a hard error rather than a silent fallback; every stage is badged with its transport.
 - **Server-only secrets**: the key is read inside a route handler; the config module throws if imported in
   a browser context; exports are asserted to contain no key-shaped strings.
-- **Real browser coverage**: 23 Playwright scenarios over the full flow at 1440×900 and 390×844, including
-  the unavailable state, a cancelled screen, a refused service (503) and an exported incomplete run.
+- **Real browser coverage**: 43 Playwright scenarios over the full flow at 1440×900 and 390×844 — 85 runs
+  across desktop, mobile and a live-mode cost gate — including the unavailable state, a cancelled screen, a
+  refused service (503), an exported incomplete run, and the review invariants (a block has no approval path).
 - **Small surface**: four runtime dependencies (next, react, react-dom, clocked-sdk), no component library,
   no icon package, no database, no telemetry.
 
@@ -85,12 +86,12 @@ Protect run for every content type; Inspect runs only when the content is a scri
 | Item | State |
 | --- | --- |
 | Build, typecheck, lint | clean, 0 warnings |
-| Unit / integration tests | 180 passing in 23 files |
-| Browser tests | 46 runs (23 scenarios × desktop + mobile), 44 passing, 2 deliberate skips |
+| Unit / integration tests | 212 passing in 25 files |
+| Browser tests | 85 runs (43 scenarios across desktop, mobile and live-gate), 83 passing, 2 deliberate skips |
 | Live Clocked detections | **verified with a real key** — `/injection` 0.9957 critical, `/pii` 6 entities including two custom kinds, `/script` 0.9948 malicious; 12–19 credits per screen; responses recorded under `tests/fixtures/` and asserted by contract tests |
 | Server-side live path | **verified 2026-11-01 from a GitHub-hosted runner** with the product's own SDK path: three calls, three `200`s, no challenge, 12 credits, no retry (`TEST_REPORT.md` §4.4). From the build machine the same client is still challenged or dropped, and the app reports `Screening unavailable — manual review required`; it never falls back to the simulator |
-| Deployment | `<demo-url>` — not deployed yet |
-| Repository | `<github-url>` — private until the owner publishes it |
+| Deployment | <https://incomparable-swan-890023.netlify.app/> — deployed, simulated mode, 20 screens/day; the host's access control is still being switched off |
+| Repository | <https://github.com/AIcoder123-a/trustroute> — public release is an owner action |
 
 The mock mode is clearly labelled in the UI and in every export. It exists so the product can be reviewed
 without a key; it is never presented as Clocked output.
@@ -100,8 +101,8 @@ without a key; it is never presented as Clocked output.
 | Field | Value |
 | --- | --- |
 | Project name | TrustRoute |
-| Demo | `<demo-url>` — and `<video-url>` as well; either satisfies the rules, both are safer |
-| Repository | `<github-url>` (public, with development history) |
+| Demo | <https://incomparable-swan-890023.netlify.app/> — and `<video-url>` as well; either satisfies the rules, both are safer |
+| Repository | <https://github.com/AIcoder123-a/trustroute> (public, with development history) |
 | Awards to enter | Best Overall App · Best Use of Protect, Guard, or Inspect |
 | Team | `<name>`, `<email>`, `<github-handle>` |
 | People's Choice | not entered unless a LinkedIn post is published and its URL added before the deadline |

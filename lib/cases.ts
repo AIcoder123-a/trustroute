@@ -143,7 +143,7 @@ Start-Process -FilePath "$env:TEMP\\ch.exe" -ArgumentList "--all" -Wait`,
   {
     id: 'tool-output-pii',
     title: 'Tool output with identifiers',
-    summary: 'CRM lookup result containing a national ID and a live API token.',
+    summary: 'CRM lookup result containing a national ID and an upstream token in a debug block.',
     contentType: 'tool_output',
     expectation: 'review',
     teaches:
@@ -161,7 +161,7 @@ Start-Process -FilePath "$env:TEMP\\ch.exe" -ArgumentList "--all" -Wait`,
     "internal_note": "Escalated twice in April; do not re-open without the account owner."
   },
   "debug": {
-    "upstream_token": "sk_test_51KdExampleTokenNotReal0042",
+    "upstream_token": "demo-token-not-a-credential",
     "region": "us-east-2"
   }
 }`,

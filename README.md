@@ -9,9 +9,31 @@ the content, personal data is masked, and a deterministic policy engine returns 
 
 > Screen untrusted content before an agent reads it.
 
-![The TrustRoute workbench after screening a prompt injection](docs/screenshots/workbench-injection.png)
+![A blocked prompt injection: the BLOCK decision, Guard's evidence, and a checkpoint with no approval to give](docs/screenshots/blocked.png)
 
 ---
+
+## Try it
+
+**Live demo:** <https://incomparable-swan-890023.netlify.app/> — no account, no key, nothing to install.
+The deployment runs the labelled simulator, so the whole flow can be walked without spending Clocked
+credits, and it allows 20 screenings per UTC day for the whole site (10 per caller per 5 minutes) — see
+*Known limitations* for what happens when that is used up. If the URL answers with a login prompt, the
+site's access control has not been switched off yet; that is a hosting setting, not a change to the product.
+
+A 60-second tour:
+
+1. Open the demo. The header badge reads **Simulated**: every number in the walkthrough comes from the
+   labelled simulator, not from Clocked, and that is stated on every surface.
+2. Pick **Classic prompt injection** and press **Screen content**. The decision is **BLOCK**, and the
+   checkpoint on the right explains that there is no approval on a blocked run.
+3. Pick **Script needing review**. The decision is **REVIEW**; read *Inspect*'s flagged lines in the
+   evidence panel, then approve it at the checkpoint and watch the decision move to PASS.
+4. Pick **Ticket with personal data**. Protect masks four entities, and only the sanitized copy is offered.
+5. Open **JSON report** or **Review sheet** to see what leaves the product: hashes, verdicts, thresholds
+   and reasons — never the raw text, never an entity value.
+
+`docs/DEMO_GUIDE.md` is the printable version of this walkthrough, with the expected screen at each step.
 
 ## The problem
 
@@ -67,6 +89,29 @@ The invariant that matters most: **a detection that did not complete can never p
 401/403, exhausted credits, a malformed body or a skipped required stage all degrade the run to REVIEW.
 A missing key in live mode is a hard error, never a silent fallback to fixtures.
 
+### What a human can and cannot change
+
+A REVIEW is the only outcome a person can move, and only in the two directions the policy table allows.
+The rules live in one pure function, `lib/review.ts::planReview`, used by both the checkpoint and the
+`POST /api/review` route, so the button state and the server's answer cannot drift apart.
+
+| Policy said | Detection completed | Approve | Reject |
+| --- | --- | --- | --- |
+| **REVIEW** | yes | → **PASS** | → **BLOCK** |
+| **REVIEW** | no | refused: nothing was assessed | → **BLOCK** (fail-closed) |
+| **BLOCK** | — | refused: a block is final at this gateway | refused: already the strongest state |
+| **PASS** | yes | refused: nothing is waiting on a human | → **BLOCK** |
+
+The server does not take the browser's word for any of this. `/api/review` looks the run up in its own
+audit record, requires the request to belong to the same browser session, rejects a `decisionBefore`
+that disagrees with the recorded decision, and then applies `planReview` to the **recorded** policy
+decision. A hand-written `POST` that claims `REVIEW` for a blocked run is refused, not honoured.
+
+Approval changes one thing: an internal label. TrustRoute never executes the script, never sends the
+message, never calls a downstream tool — there is no code path that does, and the interface says so at
+the checkpoint. That is also why a block is not "approved away": the product has no release action to
+grant.
+
 ## Screens
 
 The interface has two levels, not three columns. **Intake** is one statement, one input and one primary
@@ -76,29 +121,33 @@ the left, and the reasoning — why, what to do next, the human checkpoint — o
 (stage meters, endpoints, timing, credits) is one disclosure away, and the source reader is the only dark
 surface in the product.
 
-| Masked copy, built from Protect spans | Human checkpoint |
+| Intake — four content types, one primary action | Blocked by Guard — evidence, and no approval to give |
 | --- | --- |
-| ![Forwarded copy with typed placeholders](docs/screenshots/masked-copy.png) | ![Review decision with reasons and actions](docs/screenshots/review-decision.png) |
+| ![The intake screen, with the four content types and the sample cases](docs/screenshots/intake.png) | ![A blocked run: BLOCK, Guard's passages, and a checkpoint that offers no approval](docs/screenshots/blocked.png) |
 
-| Printable review sheet | Mobile |
+| REVIEW from Inspect — flagged lines, then a human | A required detection did not complete (live) |
 | --- | --- |
-| ![Review sheet](docs/screenshots/report.png) | ![Mobile layout](docs/screenshots/mobile.png) |
+| ![A script held for review, with Inspect's flagged lines and the approve/reject checkpoint](docs/screenshots/review.png) | ![Screening unavailable in live mode](docs/screenshots/screening-unavailable.png) |
 
-| A required detection did not complete (live) | The same state on a phone |
-| --- | --- |
-| ![Screening unavailable in live mode](docs/screenshots/screening-unavailable.png) | ![Screening unavailable on mobile](docs/screenshots/screening-unavailable-mobile.png) |
+All three current frames come from the production build in simulated mode on 2026-11-08, 1440 px wide (the
+blocked frame is 1320 px tall so that its checkpoint is inside the frame). The blocked run shows the state
+the checkpoint is supposed to be in: **no approval control at all**, and the sentence that says why.
 
-The last row is not a mock-up of an error. It is a live-mode run on a machine whose network the Clocked edge
+The last image is not a mock-up of an error. It is a live-mode run on a machine whose network the Clocked edge
 answers with an HTML challenge (`403 cf-mitigated: challenge`): both stages report `edge_interstitial`, and
-the product holds the content instead of inventing a verdict. What each screenshot shows, and how to
-recapture it, is in `docs/SCREENSHOTS.md`.
+the product holds the content instead of inventing a verdict. It predates the current layout and is kept for
+the behaviour, not the styling.
+
+Everything else in `docs/screenshots/` is history. Any capture older than 2026-11-08 predates the review
+fix and may show an approval control on a blocked run — that control no longer exists. `docs/SCREENSHOTS.md`
+records which file is current and what each one shows.
 
 ## Quick start
 
 Node 22.9 or newer — the acceptance scripts load `.env.local` with `node --env-file-if-exists`.
 
 ```bash
-git clone <repository-url> trustroute
+git clone https://github.com/AIcoder123-a/trustroute.git trustroute
 cd trustroute
 npm install
 
@@ -136,11 +185,16 @@ Environment (`see .env.example`):
 | `POLICY_BLOCK_INJECTION` | `0.85` | injection probability at which the policy blocks |
 | `POLICY_BLOCK_SCRIPT` | `0.80` | script malicious probability at which the policy blocks |
 | `POLICY_REVIEW_ENTITY_COUNT` | `6` | findings that force a human review on volume alone |
-| `RATE_LIMIT_REQUESTS` | `20` | screens per IP per 5-minute window |
-| `DAILY_SCREENS` | `60` live / `240` mock | screens per UTC day for the whole deployment — the credit-balance ceiling |
+| `RATE_LIMIT_REQUESTS` | `20` | screens per IP per 5-minute window — the public demo sets `10` |
+| `DAILY_SCREENS` | `60` live / `240` mock | screens per UTC day for the whole deployment — the credit-balance ceiling; the public demo sets `20` |
 | `ALLOWED_ORIGINS` | — | extra origins allowed to POST, for a reverse proxy; same-origin is always allowed |
 | `CLOCKED_BASE_URL` | SDK default | endpoint root override, for when the provider supplies a different one |
 | `CLOCKED_TIMEOUT_MS` | `30000` | per-attempt timeout, clamped to 5–120 s |
+
+The defaults above are the code's defaults, not the demo's configuration. The public deployment overrides two
+of them — `DAILY_SCREENS=20` and `RATE_LIMIT_REQUESTS=10` — and runs `CLOCKED_MODE=mock`, so a measurement
+taken against the demo will read those numbers instead of these. `/api/status` on any instance reports the
+values it is actually running with, which is the only figure worth quoting.
 
 ## Demo cases
 
@@ -188,6 +242,10 @@ lib/copy             mode-aware wording: a sentence about Clocked can only exist
 - The API key exists only in the server process. `lib/config.ts` throws if imported in a browser context.
 - The gateway never executes a script, never sends a message, never calls a downstream tool. "Approve"
   changes an internal routing state and says so on screen.
+- **A block or an incomplete screen cannot be approved.** The checkpoint renders no approval control for
+  either, the client refuses the action before sending it, and `POST /api/review` re-checks it against the
+  server's own record of the run. There is no combination of clicks or hand-written requests that turns a
+  BLOCK, or an unavailable screen, into PASS.
 - The original content is never labelled safe when masking fails; `maskedText: null` with findings present
   forces REVIEW.
 - Exports contain a hashed identifier, a masked copy and probabilities — no entity values, and evidence
@@ -199,11 +257,15 @@ lib/copy             mode-aware wording: a sentence about Clocked can only exist
 
 | Layer | Count | Command |
 | --- | --- | --- |
-| Unit / integration (vitest) | 180 assertions in 23 files | `npm test` |
-| Browser (Playwright, desktop + mobile) | 46 runs (23 scenarios × 2 viewports), 44 passing, 2 deliberate skips | `npm run test:e2e` |
+| Unit / integration (vitest) | 212 tests in 25 files | `npm test` |
+| Browser (Playwright, desktop + mobile + live-gate) | 43 scenarios → 85 runs, 83 passing, 2 deliberate skips | `npm run test:e2e` |
 
-The browser suite walks the real flow: load a case → screen → read the decision → inspect the masked copy →
-approve → export JSON → print sheet, at 1440×900 and 390×844. Details and results: `docs/TEST_REPORT.md`.
+The browser suite walks the real flow: load a case → screen → read the decision → inspect the sanitized
+copy → approve a REVIEW → export JSON → print sheet, at 1440×900 and 390×844. The two skips are
+narrow-screen cases that only run in the mobile project. A third project (`live-gate`) starts the app in
+live mode with a placeholder key and a request stub, to prove that the cost confirmation appears before a
+second live screen and that cancelling sends nothing — no real Clocked call is made in any test.
+Details and results: `docs/TEST_REPORT.md`.
 
 ## Where to look
 
@@ -213,6 +275,7 @@ approve → export JSON → print sheet, at 1440×900 and 390×844. Details and 
 | `docs/API_INTEGRATION.md` | endpoint contracts, real response shapes, the edge behaviour, the acceptance run |
 | `docs/ARCHITECTURE.md` | how a request becomes a decision, and what the browser is allowed to know |
 | `docs/SECURITY_NOTES.md` | key handling, the public-demo controls, what is logged and what is not |
+| `docs/DEMO_GUIDE.md` | the five-step walkthrough a judge can follow, with the expected screen at each step |
 | `docs/DEMO_SCRIPT.md` / `docs/DEMO_RECORDING.md` | the 100-second demo and how to record it |
 | `docs/SCREENSHOTS.md` | what each screenshot shows |
 | `docs/DEPLOYMENT.md` | host comparison, credit protection, the pre-deploy experiment |
@@ -242,15 +305,39 @@ approve → export JSON → print sheet, at 1440×900 and 390×844. Details and 
   It exists so the review flow can be exercised without a key, and it is never presented as Clocked
   output. There is no code path that falls back to it after a failed live call.
 - The simulated detector is a heuristic simulator, not a detector.
-- The audit trail and the per-caller concurrency counter are in process memory. On one long-lived process
-  that is exact; on a serverless host an invocation that starts empty cannot count what the previous one
-  did, so **both the daily ceiling and the per-caller window move to Redis** when
-  `UPSTASH_REDIS_REST_*` is set (one atomic `EVAL` each — the daily one fails closed, the window degrades
-  to memory, `docs/SECURITY_NOTES.md` §14). A live deployment without it is refused by
-  `npm run deploy:preflight`. The human check can move to Turnstile (`TURNSTILE_*`), but that half still
-  needs the browser widget (`docs/RENDER.md` §5).
+- **No authentication, and no approval workflow.** The reviewer is `demo-reviewer`; nothing verifies who is
+  at the keyboard, and a visitor can approve a REVIEW they created themselves. The checkpoint demonstrates
+  the *policy* limit — a block or an incomplete screen cannot be approved — not an enterprise review system
+  with identity, roles, queues or notifications. A production deployment needs an identity layer in front.
+- **Approval is a label, not a release.** TrustRoute never executes the script, sends the message or calls a
+  downstream tool; there is no code path that does. Approving a REVIEW changes an internal routing state and
+  nothing else — which is also why a BLOCK has nothing to approve away.
+- **Audit and review records live in process memory.** They are content-free (run id, hash prefix, length,
+  verdict, stage statuses, reviewer note) and vanish on restart. On a serverless host, `analyze` and
+  `review` can land on different instances: the review route then answers `404 unknown_run` instead of
+  guessing. That is fail-closed — the decision simply cannot be moved from a tab that no longer has a
+  server-side record — but it shortens the window in which a REVIEW can be approved. Records are also
+  scoped to a browser cookie (`tr_session`), so the session trail is per browser, not a shared log.
+- **The demo's budget is 20 screens per UTC day for the whole deployment, 10 per caller per 5 minutes.**
+  Those are the Netlify overrides; the code's defaults are larger (60/240 per day, 20 per window). Twenty is
+  a small allowance — a few people walking the tour can use it up, and `POST /api/analyze` then answers
+  `429 rate_limited` with "This demo has used its screening allowance for today". Nothing is screened and
+  nothing is released; the cases stay loadable, so the interface is still inspectable. `/api/status` reports
+  the numbers actually in force, and whether the counters are shared through Redis, so the budget can be
+  read rather than assumed.
+- **Shared counters are a precondition for live mode.** The audit trail and the per-caller concurrency
+  counter are in process memory. On a serverless host the daily ceiling and the per-caller window move to
+  Redis when `UPSTASH_REDIS_REST_*` is set (one atomic `EVAL` each — the daily one fails closed, the window
+  degrades to memory, `docs/SECURITY_NOTES.md` §14), and `npm run deploy:preflight` refuses a live
+  deployment without them. The human check can move to Turnstile, but that half still needs a browser widget
+  that is not shipped. The public demo runs the simulator, so neither counter is under real pressure there.
+- **The demo site's access control is an owner setting that is still being changed.** TrustRoute has no
+  login of its own; if the URL answers with a prompt, that is the host's gate in front of the application,
+  not the product asking for credentials.
+- **Some behaviour exists only to make the product demonstrable**: the eight demo cases are hand-written
+  synthetic inputs, and the *Screen the blocked example* shortcut runs one screening without a cost
+  confirmation (as any first screen does).
 - The same-origin check stops other *pages*, not other *clients*: it is a browser rule, never a limiter.
-- No authentication. A public deployment needs a gate in front of it, or a very small daily budget.
 - Content is capped (16k prose / 32k script) and rejected rather than truncated, so a screen always covers
   the whole input.
 
@@ -268,6 +355,7 @@ approve → export JSON → print sheet, at 1440×900 and 390×844. Details and 
 | `docs/NETLIFY.md` | **the current deployment**: what the free plan's credits actually cost, what a serverless host changes about the counters, the two-phase plan, and the browser steps the owner has to take |
 | `docs/RENDER.md` | the previous candidate, kept because its limits and its cold-start analysis are still the reference if a card is ever bound to Render |
 | `docs/RELEASE_CHECKLIST.md` | secret scan, what ships, and the ordered launch runbook |
+| `docs/DEMO_GUIDE.md` | the judge-facing walkthrough: five steps, expected output, and what each step proves |
 | `docs/SUBMISSION_DRAFT.md` | entry-form copy and video script |
 | `AGENTS.md` | rules for continuing the work |
 
