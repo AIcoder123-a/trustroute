@@ -31,6 +31,14 @@ export function ShieldIcon(props: IconProps) {
   );
 }
 
+export function PlusIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 5.5v13M5.5 12h13" />
+    </Icon>
+  );
+}
+
 export function ScanIcon(props: IconProps) {
   return (
     <Icon {...props}>

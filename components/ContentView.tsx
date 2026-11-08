@@ -6,7 +6,7 @@ import type { AnalyzeResponse } from '@/lib/types';
 import { isHighSensitivity } from '@/lib/redact';
 import { KIND_LABEL, buildSegments, type HighlightKind } from '@/lib/highlight';
 import { comparisonLabel, comparisonTooltip } from '@/lib/copy';
-import { CopyIcon, CheckIcon } from '@/components/icons';
+import { CopyIcon, CheckIcon, AlertIcon } from '@/components/icons';
 
 type View = 'original' | 'masked';
 
@@ -88,11 +88,18 @@ export function ContentView({
   result,
   text,
   focus,
+  blocked = false,
   onLocate,
 }: {
   result: AnalyzeResponse | null;
   text: string;
   focus: FocusSpan | null;
+  /**
+   * `result.policy.decision === 'BLOCK'` (or a reviewer's reject). A blocked run
+   * still gets a masked copy — Protect masks before the decision is made — but
+   * calling that copy "Forwarded" would contradict the decision on screen.
+   */
+  blocked?: boolean;
   onLocate?: (span: LocateSpan) => void;
 }) {
   const [view, setView] = useState<View>('original');
@@ -152,13 +159,15 @@ export function ContentView({
               type="button"
               role="tab"
               aria-selected={view === tab}
-              aria-label={tab === 'masked' ? 'Forwarded copy' : 'As received'}
+              aria-label={
+                tab === 'masked' ? (blocked ? 'Sanitized preview of blocked content' : 'Forwarded copy') : 'As received'
+              }
               onClick={() => setView(tab)}
-              className={`h-7 rounded-md px-2.5 text-[12px] font-medium transition-colors ${
+              className={`h-7 max-sm:h-9 rounded-md px-2.5 text-[12px] font-medium transition-colors ${
                 view === tab ? 'bg-surface text-fg shadow-[0_1px_2px_rgba(14,26,24,0.08)]' : 'text-fg-3 hover:text-fg-2'
               }`}
             >
-              {tab === 'original' ? 'As received' : 'Forwarded copy'}
+              {tab === 'original' ? 'As received' : blocked ? 'Sanitized preview' : 'Forwarded copy'}
               {tab === 'masked' ? <span className="mono ml-1.5 text-[11px] text-fg-3">{appliedCount}</span> : null}
             </button>
           ))}
@@ -175,7 +184,7 @@ export function ContentView({
           disabled={view === 'masked' && !masked}
         >
           {copied ? <CheckIcon size={12} /> : <CopyIcon size={12} />}
-          {copied ? 'Copied' : view === 'masked' ? 'Copy masked' : 'Copy'}
+          {copied ? 'Copied' : view === 'masked' ? (blocked ? 'Copy sanitized' : 'Copy masked') : 'Copy'}
         </button>
       </header>
 
@@ -190,9 +199,10 @@ export function ContentView({
           <button
             type="button"
             onClick={() => setView(view === 'masked' ? 'original' : 'masked')}
-            className="ml-auto text-[11.5px] font-medium text-accent underline decoration-accent/30 underline-offset-2 hover:decoration-accent"
+            disabled={!masked}
+            className="ml-auto text-[11.5px] font-medium text-accent underline decoration-accent/30 underline-offset-2 hover:decoration-accent disabled:text-fg-3 disabled:no-underline"
           >
-            {view === 'masked' ? 'See what arrived' : 'See what the agent gets'}
+            {view === 'masked' ? 'See what arrived' : blocked ? 'See the sanitized preview' : 'See what the agent gets'}
           </button>
         </div>
       ) : null}
@@ -221,6 +231,19 @@ export function ContentView({
         </div>
       ) : null}
 
+      {view === 'masked' && blocked ? (
+        <div className="border-t border-block-line bg-block-soft px-4 py-2.5">
+          <p className="flex items-center gap-1.5 text-[12px] font-semibold text-block">
+            <AlertIcon size={12} />
+            Sanitized preview · blocked
+          </p>
+          <p className="mt-1 text-[11.5px] leading-relaxed text-[#7a2a2f]">
+            Policy blocked this content at the gateway. This copy exists so a reviewer can see what the mask removed — it
+            is not forwarded to the agent, and nothing was sent.
+          </p>
+        </div>
+      ) : null}
+
       <div
         ref={scrollerRef}
         className="scroll-dark max-h-[460px] min-h-[180px] overflow-auto bg-code px-4 py-4 sm:px-5"
@@ -246,7 +269,9 @@ export function ContentView({
             <div className="flex min-h-[140px] items-center justify-center px-4 text-center text-[12.5px] leading-relaxed text-code-fg-2">
               {result?.stages.protect.status !== 'ok'
                 ? 'No forwarded copy: Protect did not complete, so nothing was masked and nothing may be forwarded. This run reports screening unavailable.'
-                : 'No forwarded copy. Protect returned no findings, or a masked copy could not be built from the spans — in which case policy will not allow the original through in its place.'}
+                : blocked
+                  ? 'No sanitized preview was built. This content is blocked at the gateway, so nothing from it is prepared for forwarding — masked or not.'
+                  : 'No forwarded copy. Protect returned no findings, or a masked copy could not be built from the spans — in which case policy will not allow the original through in its place.'}
             </div>
           )
         ) : (

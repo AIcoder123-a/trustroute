@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { DEMO_CASES } from '@/lib/cases';
 import { buildReport } from '@/lib/report';
+import { clockTime } from '@/lib/format';
 import { detectionFootnote, headerModeLabel, headerModeTitle } from '@/lib/copy';
 import type {
   AnalyzeResponse,
@@ -16,7 +17,7 @@ import type {
 import { CONTENT_TYPE_LABELS } from '@/lib/types';
 import { CasePicker, ContentTypeTabs } from '@/components/CasePicker';
 import { ContentView } from '@/components/ContentView';
-import { DecisionPrimer, InsightRail, ResultSummary } from '@/components/DecisionPanel';
+import { DecisionPrimer, InsightRail, ResultSummary, ScreeningConfirm, type ConfirmKind } from '@/components/DecisionPanel';
 import { EvidencePanel } from '@/components/EvidencePanel';
 import { ReportDialog } from '@/components/ReportDialog';
 import { SessionTrail } from '@/components/SessionTrail';
@@ -27,12 +28,28 @@ import {
   DocumentIcon,
   LoaderIcon,
   LockIcon,
+  PlusIcon,
   ScanIcon,
   ShieldIcon,
   XIcon,
 } from '@/components/icons';
 
 type RunState = 'idle' | 'loading' | 'ready' | 'error';
+
+/**
+ * One screening, frozen.
+ *
+ * The result is never stored next to the draft: it is stored *with the exact
+ * text and content type it was produced from*. Everything downstream — the
+ * reader, the highlights, the evidence offsets, the character count, the
+ * masked copy, the export — reads from this snapshot, so editing the draft can
+ * never make an old verdict describe new text.
+ */
+type Screening = {
+  text: string;
+  contentType: ContentType;
+  result: AnalyzeResponse;
+};
 
 const SHELL = 'mx-auto w-full max-w-[1240px] px-4 sm:px-6 lg:px-8';
 
@@ -47,7 +64,7 @@ export function Workbench({
   const [text, setText] = useState('');
   const [activeCase, setActiveCase] = useState<DemoCase | null>(null);
   const [runState, setRunState] = useState<RunState>('idle');
-  const [result, setResult] = useState<AnalyzeResponse | null>(null);
+  const [screening, setScreening] = useState<Screening | null>(null);
   const [error, setError] = useState<{ title: string; detail: string; retryable: boolean } | null>(null);
   const [review, setReview] = useState<ReviewEvent | null>(null);
   const [reveal, setReveal] = useState(true);
@@ -58,6 +75,8 @@ export function Workbench({
   const [focus, setFocus] = useState<{ start: number; end: number; id: string } | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [editInput, setEditInput] = useState(false);
+  /** A live-mode re-screen waits here until the reader accepts the cost. */
+  const [confirm, setConfirm] = useState<ConfirmKind | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const resultRef = useRef<HTMLDivElement>(null);
@@ -69,11 +88,14 @@ export function Workbench({
    */
   const runSeq = useRef(0);
 
+  const result = screening?.result ?? null;
   const limit = contentType === 'script' ? limits.scriptCharacters : limits.proseCharacters;
   const overLimit = text.length > limit;
   const canAnalyze = text.trim().length > 0 && !overLimit && runState !== 'loading';
   const busy = runState === 'loading';
-  const showIntake = result === null || editInput;
+  const showIntake = screening === null || editInput;
+  /** The draft no longer matches the text the current result describes. */
+  const draftDiffers = screening !== null && (screening.text !== text || screening.contentType !== contentType);
 
   const refreshAudit = useCallback(async () => {
     try {
@@ -88,15 +110,19 @@ export function Workbench({
 
   const resetRun = useCallback(() => {
     setEditInput(false);
-    setResult(null);
+    setScreening(null);
     setReview(null);
     setError(null);
     setFocus(null);
+    setConfirm(null);
     setRunState('idle');
   }, []);
 
   const analyze = useCallback(
     async (content?: { text: string; contentType: ContentType; activeCase: DemoCase | null }) => {
+      // One screen at a time: a double click (or a stray Enter) must not spend a
+      // second request while the first is still unanswered.
+      if (abortRef.current) return;
       const payload = content ?? { text, contentType, activeCase };
       if (payload.text.trim().length === 0) {
         setError({ title: 'Nothing to screen', detail: 'Add some text or load a demo case first.', retryable: false });
@@ -110,6 +136,7 @@ export function Workbench({
       setReview(null);
       setNotice(null);
       setFocus(null);
+      setConfirm(null);
 
       const controller = new AbortController();
       abortRef.current = controller;
@@ -140,7 +167,7 @@ export function Workbench({
           const failure = body as { error?: string; message?: string; hint?: string };
           const retryAfter = Number.parseInt(response.headers.get('Retry-After') ?? '', 10);
           const base = failure.message ?? 'The server did not return a usable response.';
-          setResult(null);
+          setScreening(null);
           setError({
             title:
               response.status === 429
@@ -164,21 +191,36 @@ export function Workbench({
           return;
         }
 
-        setResult(body as AnalyzeResponse);
+        const payloadResult = body as AnalyzeResponse;
+        // The snapshot is written in the same update as the result: there is no
+        // render in which a verdict exists without the text it describes.
+        setScreening({
+          text: payload.text,
+          contentType: payload.contentType,
+          result: payloadResult,
+        });
         setRunState('ready');
         void refreshAudit();
-        requestAnimationFrame(() => resultRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
+        requestAnimationFrame(() => {
+          const node = resultRef.current;
+          if (!node) return;
+          const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+          node.scrollIntoView({ block: 'start', behavior: reduce ? 'auto' : 'smooth' });
+          // Keyboard and screen-reader users land on the decision, not on the
+          // header they were already past.
+          node.focus({ preventScroll: true });
+        });
       } catch (cause) {
         if (seq !== runSeq.current) return;
         if (cause instanceof Error && cause.name === 'AbortError') {
           // The reviewer stopped it. Nothing was decided, so there is no result
           // and no decision to override — say that instead of "network error".
-          setResult(null);
+          setScreening(null);
           setRunState('idle');
           setNotice('Screening cancelled before a decision was made. Nothing was screened and nothing was released.');
           return;
         }
-        setResult(null);
+        setScreening(null);
         setError({
           title: 'Network error',
           detail:
@@ -224,6 +266,67 @@ export function Workbench({
   const cancel = useCallback(() => {
     abortRef.current?.abort();
   }, []);
+
+  /**
+   * Start over: empty box, default type, no screening and no review.
+   *
+   * This is the only control that throws the current task away, and it is
+   * deliberately inert — it never calls the screening endpoint, so a reader who
+   * wants out never spends a credit doing it.
+   */
+  const startNewScreening = useCallback(() => {
+    // Bump first: an in-flight response must not land on the empty workbench.
+    runSeq.current += 1;
+    const inFlight = abortRef.current;
+    // Release the slot immediately — the aborted request is not going to write
+    // anything, and the next screen must not be silently dropped while the
+    // browser finishes rejecting the old one.
+    abortRef.current = null;
+    inFlight?.abort();
+    setText('');
+    setContentType('support_ticket');
+    setActiveCase(null);
+    setNotice(null);
+    resetRun();
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, [resetRun]);
+
+  /**
+   * The gate in front of every *repeat* screen.
+   *
+   * In live mode a re-screen is a new paid request: it is the one action here
+   * that spends money, so it asks first and does nothing if the answer is no.
+   * Mock mode spends nothing, so it is not asked.
+   */
+  const requestScreen = useCallback(
+    (kind: ConfirmKind) => {
+      if (abortRef.current) return;
+      if (mode === 'live' && screening !== null) {
+        setConfirm(kind);
+        return;
+      }
+      void analyze();
+    },
+    [analyze, mode, screening],
+  );
+
+  const confirmScreen = useCallback(() => {
+    setConfirm(null);
+    void analyze();
+  }, [analyze]);
+
+  const analyzeFromIntake = useCallback(() => {
+    if (screening !== null) requestScreen('changes');
+    else void analyze();
+  }, [analyze, requestScreen, screening]);
+
+  /** Put the draft back to the text the visible result describes. */
+  const discardEdits = useCallback(() => {
+    if (!screening) return;
+    setText(screening.text);
+    setContentType(screening.contentType);
+    setConfirm(null);
+  }, [screening]);
 
   const submitReview = useCallback(
     async (action: ReviewAction, note: string) => {
@@ -315,14 +418,17 @@ export function Workbench({
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      // Only while the input is on screen: the shortcut is printed on that
+      // button, and on the results view it would be an unannounced re-screen.
+      if (!showIntake) return;
       if ((event.metaKey || event.ctrlKey) && event.key === 'Enter' && canAnalyze) {
         event.preventDefault();
-        void analyze();
+        analyzeFromIntake();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [analyze, canAnalyze]);
+  }, [analyzeFromIntake, canAnalyze, showIntake]);
 
   const warnings = useMemo(
     () =>
@@ -336,11 +442,15 @@ export function Workbench({
 
   return (
     <div id="app-shell" className="flex min-h-dvh flex-col">
-      <SiteHeader mode={mode} showIntake={showIntake} />
+      <a href="#main" className="skip-link">
+        Skip to content
+      </a>
+
+      <SiteHeader mode={mode} showIntake={showIntake} onNewScreening={startNewScreening} />
 
       {mode === 'mock' ? <ModeNotice /> : null}
 
-      <main className={`${SHELL} flex-1 pb-16 pt-7 sm:pt-10`}>
+      <main id="main" tabIndex={-1} className={`${SHELL} flex-1 pb-16 pt-7 outline-none sm:pt-10`}>
         {showIntake ? (
           <Intake
             mode={mode}
@@ -350,7 +460,9 @@ export function Workbench({
             setContentType={(next) => {
               setContentType(next);
               if (activeCase && activeCase.contentType !== next) setActiveCase(null);
-              resetRun();
+              // Only the *result* must not survive a type change; the draft is
+              // the reader's, and the mismatch is reported instead of erased.
+              if (screening) resetRun();
             }}
             activeCase={activeCase}
             onSelectCase={loadCase}
@@ -360,8 +472,13 @@ export function Workbench({
             canAnalyze={canAnalyze}
             overLimit={overLimit}
             limit={limit}
+            hasScreening={screening !== null}
+            changedSinceScreening={draftDiffers}
+            confirm={confirm === 'changes' ? 'changes' : null}
             textareaRef={textareaRef}
-            onAnalyze={() => void analyze()}
+            onAnalyze={analyzeFromIntake}
+            onConfirm={confirmScreen}
+            onCancelConfirm={() => setConfirm(null)}
             onCancel={cancel}
             onClear={() => {
               setText('');
@@ -373,17 +490,19 @@ export function Workbench({
             notice={notice}
             audit={audit}
             onDismissEdit={
-              result
+              screening
                 ? () => {
                     setEditInput(false);
                     setNotice(null);
+                    setConfirm(null);
                   }
                 : undefined
             }
           />
         ) : (
           <Results
-            result={result!}
+            screening={screening!}
+            draft={{ text, contentType }}
             mode={mode}
             busy={busy}
             elapsed={elapsed}
@@ -391,16 +510,20 @@ export function Workbench({
             reviewBusy={reviewBusy}
             notice={notice}
             warnings={warnings}
-            text={text}
             focus={focus}
             setFocus={setFocus}
             reveal={reveal}
             setReveal={setReveal}
             audit={audit}
-            contentType={contentType}
             resultRef={resultRef}
+            confirm={confirm}
+            onNewScreening={startNewScreening}
             onEdit={() => setEditInput(true)}
-            onRecheck={() => void analyze()}
+            onRecheck={() => requestScreen('recheck')}
+            onScreenChanges={() => requestScreen('changes')}
+            onDiscardEdits={discardEdits}
+            onConfirm={confirmScreen}
+            onCancelConfirm={() => setConfirm(null)}
             onCancel={cancel}
             onApprove={(note) => void submitReview('approve', note)}
             onReject={(note) => void submitReview('reject', note)}
@@ -419,34 +542,53 @@ export function Workbench({
   );
 }
 
-function SiteHeader({ mode, showIntake }: { mode: 'live' | 'mock'; showIntake: boolean }) {
+function SiteHeader({
+  mode,
+  showIntake,
+  onNewScreening,
+}: {
+  mode: 'live' | 'mock';
+  showIntake: boolean;
+  onNewScreening: () => void;
+}) {
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-canvas/85 backdrop-blur-md">
       <div className={`${SHELL} flex h-14 items-center gap-3`}>
-        <span className="flex size-7 items-center justify-center rounded-md bg-accent text-white">
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-accent text-white">
           <ShieldIcon size={16} />
         </span>
-        <div className="flex items-baseline gap-2.5">
+        <div className="flex min-w-0 items-baseline gap-2.5">
           <span className="text-[14.5px] font-semibold tracking-tight">TrustRoute</span>
           <span className="hidden text-[11.5px] text-fg-3 sm:inline">AI agent security gateway</span>
         </div>
 
-        {showIntake ? null : (
-          <a href="#try" className="ml-auto hidden text-[12px] text-fg-2 transition-colors hover:text-fg sm:inline">
-            Try a screening
-          </a>
-        )}
-        <span
-          className={`ml-auto inline-flex h-6 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-medium ${
-            mode === 'live'
-              ? 'border-pass-line bg-pass-soft text-pass'
-              : 'border-review-line bg-review-soft text-review'
-          }`}
-          title={headerModeTitle(mode)}
-        >
-          <span className={`size-1.5 rounded-full ${mode === 'live' ? 'bg-pass' : 'bg-review'}`} />
-          {headerModeLabel(mode)}
-        </span>
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          {/* A result can be 3,000px of evidence; the way out has to be on
+              screen from anywhere in it, not only at the top. This is the same
+              action as the one in the result band, and it never screens. */}
+          {showIntake ? null : (
+            <button
+              type="button"
+              onClick={onNewScreening}
+              aria-label="Start a new screening"
+              className="btn btn-ghost btn-sm whitespace-nowrap"
+            >
+              <PlusIcon size={11} />
+              New screening
+            </button>
+          )}
+          <span
+            className={`inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-medium ${
+              mode === 'live'
+                ? 'border-pass-line bg-pass-soft text-pass'
+                : 'border-review-line bg-review-soft text-review'
+            }`}
+            title={headerModeTitle(mode)}
+          >
+            <span className={`size-1.5 rounded-full ${mode === 'live' ? 'bg-pass' : 'bg-review'}`} />
+            {headerModeLabel(mode)}
+          </span>
+        </div>
       </div>
     </header>
   );
@@ -505,8 +647,13 @@ function Intake({
   canAnalyze,
   overLimit,
   limit,
+  hasScreening,
+  changedSinceScreening,
+  confirm,
   textareaRef,
   onAnalyze,
+  onConfirm,
+  onCancelConfirm,
   onCancel,
   onClear,
   error,
@@ -527,8 +674,15 @@ function Intake({
   canAnalyze: boolean;
   overLimit: boolean;
   limit: number;
+  /** True when a result already exists behind this editor. */
+  hasScreening: boolean;
+  /** True when the draft no longer matches the screened text. */
+  changedSinceScreening: boolean;
+  confirm: ConfirmKind | null;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   onAnalyze: () => void;
+  onConfirm: () => void;
+  onCancelConfirm: () => void;
   onCancel: () => void;
   onClear: () => void;
   error: { title: string; detail: string; retryable: boolean } | null;
@@ -623,7 +777,7 @@ function Intake({
               aria-busy={busy}
             >
               {busy ? <LoaderIcon size={14} className="animate-spin" /> : <ScanIcon size={14} />}
-              {busy ? 'Screening…' : 'Screen content'}
+              {busy ? 'Screening…' : hasScreening ? 'Screen changes' : 'Screen content'}
               <kbd className="mono ml-0.5 hidden rounded border border-white/25 px-1 text-[10.5px] font-normal opacity-80 sm:inline">
                 ⌘↵
               </kbd>
@@ -631,6 +785,17 @@ function Intake({
           </div>
         </div>
       </div>
+
+      {confirm ? (
+        <ScreeningConfirm kind={confirm} busy={busy} onConfirm={onConfirm} onCancel={onCancelConfirm} className="mt-3" />
+      ) : null}
+
+      {changedSinceScreening && !confirm && !busy ? (
+        <p className="mt-2.5 px-1 text-[11.5px] leading-relaxed text-fg-3" role="status">
+          These edits have not been screened. Screening them produces a new result — the earlier decision describes the
+          earlier text, not this draft.
+        </p>
+      ) : null}
 
       {busy ? <ScreeningProgress elapsed={elapsed} /> : null}
 
@@ -695,7 +860,8 @@ function Intake({
 }
 
 function Results({
-  result,
+  screening,
+  draft,
   mode,
   busy,
   elapsed,
@@ -703,23 +869,28 @@ function Results({
   reviewBusy,
   notice,
   warnings,
-  text,
   focus,
   setFocus,
   reveal,
   setReveal,
   audit,
-  contentType,
   resultRef,
+  confirm,
+  onNewScreening,
   onEdit,
   onRecheck,
+  onScreenChanges,
+  onDiscardEdits,
+  onConfirm,
+  onCancelConfirm,
   onCancel,
   onApprove,
   onReject,
   onExport,
   onPrint,
 }: {
-  result: AnalyzeResponse;
+  screening: Screening;
+  draft: { text: string; contentType: ContentType };
   mode: 'live' | 'mock';
   busy: boolean;
   elapsed: number;
@@ -727,22 +898,33 @@ function Results({
   reviewBusy: boolean;
   notice: string | null;
   warnings: string[];
-  text: string;
   focus: { start: number; end: number; id: string } | null;
   setFocus: (value: { start: number; end: number; id: string }) => void;
   reveal: boolean;
   setReveal: (value: boolean) => void;
   audit: AuditRecord[];
-  contentType: ContentType;
   resultRef: React.RefObject<HTMLDivElement | null>;
+  confirm: ConfirmKind | null;
+  onNewScreening: () => void;
   onEdit: () => void;
   onRecheck: () => void;
+  onScreenChanges: () => void;
+  onDiscardEdits: () => void;
+  onConfirm: () => void;
+  onCancelConfirm: () => void;
   onCancel: () => void;
   onApprove: (note: string) => void;
   onReject: (note: string) => void;
   onExport: () => void;
   onPrint: () => void;
 }) {
+  // Everything below reads from the snapshot, never from the draft: the reader,
+  // the highlight offsets, the evidence excerpts, the character count and the
+  // export all describe the text that was actually screened.
+  const { result, text, contentType } = screening;
+  const unscreenedEdits = draft.text !== text || draft.contentType !== contentType;
+  const effective = review?.decisionAfter ?? result.policy.decision;
+
   // Completion is stated once, in the stage header. The rows below show the
   // numbers; this line answers "did every check actually run?".
   const stages = [result.stages.guard, result.stages.protect, result.stages.inspect];
@@ -757,13 +939,62 @@ function Results({
         : { failed: false, label: 'all three completed' };
 
   return (
-    <div ref={resultRef} className="scroll-mt-20 space-y-3">
+    <div ref={resultRef} tabIndex={-1} data-testid="results" className="scroll-mt-20 space-y-3 outline-none">
+      {unscreenedEdits ? (
+        <section
+          role="status"
+          data-testid="unscreened-edits"
+          className="card border-review-line bg-review-soft px-4 py-3"
+        >
+          <div className="flex items-start gap-2.5">
+            <AlertIcon size={14} className="mt-0.5 shrink-0 text-review" />
+            <div className="min-w-0 flex-1">
+              <p className="text-[12.5px] font-semibold text-[#7a4d13]">
+                Unscreened edits — the result below belongs to the earlier text
+              </p>
+              <p className="mt-1 text-[12px] leading-relaxed text-fg-2">
+                This decision was made for the {result.input.characters.toLocaleString()} characters screened at{' '}
+                {clockTime(result.createdAt)}. Your draft now holds {draft.text.length.toLocaleString()} characters and
+                has not been screened: nothing below describes it, and nothing from it was released.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={onScreenChanges}
+                  disabled={busy || draft.text.trim().length === 0}
+                >
+                  <ScanIcon size={12} />
+                  Screen changes
+                </button>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={onDiscardEdits}>
+                  Discard my edits
+                </button>
+              </div>
+              {confirm === 'changes' ? (
+                <ScreeningConfirm
+                  kind="changes"
+                  busy={busy}
+                  onConfirm={onConfirm}
+                  onCancel={onCancelConfirm}
+                  className="mt-2"
+                />
+              ) : null}
+            </div>
+          </div>
+        </section>
+      ) : null}
+
       <ResultSummary
         result={result}
         review={review}
         busy={busy || reviewBusy}
+        confirm={confirm}
+        onNewScreening={onNewScreening}
         onEdit={onEdit}
         onRecheck={onRecheck}
+        onConfirm={onConfirm}
+        onCancelConfirm={onCancelConfirm}
         onExport={onExport}
         onPrint={onPrint}
       />
@@ -792,6 +1023,7 @@ function Results({
             result={result}
             text={text}
             focus={focus}
+            blocked={effective === 'BLOCK'}
             onLocate={(span) =>
               setFocus({ start: span.start, end: span.end, id: `mask-${span.type}` })
             }

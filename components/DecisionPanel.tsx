@@ -12,8 +12,10 @@ import {
   ArrowRightIcon,
   CheckIcon,
   ChevronRightIcon,
+  DocumentIcon,
   DownloadIcon,
   InfoIcon,
+  PlusIcon,
   PrintIcon,
   RefreshIcon,
   XIcon,
@@ -45,27 +47,82 @@ const DECISION_EDGE: Record<Decision, string> = {
   BLOCK: 'border-l-block',
 };
 
+export type ConfirmKind = 'recheck' | 'changes';
+
+/**
+ * The one place that says a re-screen costs something.
+ *
+ * Mock mode never reaches this component — `Workbench` only asks for a
+ * confirmation when a request would actually leave the browser. Nothing here
+ * is a modal: the strip appears under the control that asked, so the sentence
+ * and the button that fired it stay in one view.
+ */
+export function ScreeningConfirm({
+  kind,
+  busy,
+  onConfirm,
+  onCancel,
+  className = '',
+}: {
+  kind: ConfirmKind;
+  busy: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+  className?: string;
+}) {
+  return (
+    <div
+      role="alertdialog"
+      aria-label="Confirm a new screening request"
+      className={`rounded-lg border border-review-line bg-review-soft px-3 py-2.5 ${className}`}
+    >
+      <p className="text-[12px] font-semibold text-[#7a4d13]">
+        {kind === 'recheck' ? 'Screen again sends a new request' : 'Screening your changes sends a new request'}
+      </p>
+      <p className="mt-1 text-[11.5px] leading-relaxed text-[#7a4d13]">
+        That request goes to the Clocked API: it spends one of this browser&apos;s daily screenings and may debit Clocked
+        credits. Nothing has been sent yet.
+      </p>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        <button type="button" className="btn btn-sm" onClick={onConfirm} disabled={busy}>
+          {kind === 'recheck' ? 'Yes, screen again' : 'Yes, screen changes'}
+        </button>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /**
  * The answer, before the evidence.
  *
  * Everything a reader needs in the first three seconds — the decision, why in
- * one sentence, and four numbers — sits here. On a phone this block is sticky,
- * so the verdict never scrolls out of sight while the passages are read.
+ * one sentence, the four numbers, and the three ways to move on — sits here.
  */
 export function ResultSummary({
   result,
   review,
   busy,
+  confirm,
+  onNewScreening,
   onEdit,
   onRecheck,
+  onConfirm,
+  onCancelConfirm,
   onExport,
   onPrint,
 }: {
   result: AnalyzeResponse;
   review: ReviewEvent | null;
   busy: boolean;
+  confirm: ConfirmKind | null;
+  onNewScreening: () => void;
   onEdit: () => void;
   onRecheck: () => void;
+  onConfirm: () => void;
+  onCancelConfirm: () => void;
   onExport: () => void;
   onPrint: () => void;
 }) {
@@ -108,21 +165,6 @@ export function ResultSummary({
               {!unavailable && effective === 'REVIEW' ? 'Decide' : 'Why'}
               <ArrowRightIcon size={11} />
             </a>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={onEdit}>
-              <span className="hidden sm:inline">Edit input</span>
-              <span className="sm:hidden">Edit</span>
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm"
-              onClick={onRecheck}
-              disabled={busy}
-              aria-label="Screen again"
-            >
-              <RefreshIcon size={12} />
-              <span className="hidden sm:inline">Screen again</span>
-              <span className="sm:hidden">Again</span>
-            </button>
           </div>
         </div>
 
@@ -140,6 +182,42 @@ export function ResultSummary({
           </p>
         ) : unavailable ? (
           <p className="mt-1.5 text-[11.5px] text-review">no risk verdict · held for a human</p>
+        ) : null}
+      </div>
+
+      {/* Three ways to move on, named for what they do — the audit found that
+          "Edit input", "New screening" and "Screen again" were being read as
+          three spellings of the same thing. The legend underneath is the whole
+          difference; it is not a tooltip because a phone has no hover. */}
+      <div className="border-t border-line bg-surface px-4 py-2.5 sm:px-5">
+        {/* Two columns on a phone so the three actions never leave one button
+            dangling on a line of its own; one row from sm up. */}
+        <div className="grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap sm:items-center">
+          <button type="button" className="btn btn-sm col-span-2 sm:col-auto" onClick={onNewScreening}>
+            <PlusIcon size={12} />
+            New screening
+          </button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onEdit}>
+            <DocumentIcon size={12} />
+            Edit input
+          </button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onRecheck} disabled={busy}>
+            <RefreshIcon size={12} />
+            Screen again
+          </button>
+        </div>
+        <p className="mt-1.5 text-[11px] leading-relaxed text-fg-3">
+          New screening starts over with an empty box · Edit input changes the text without screening it · Screen again
+          re-runs this exact text
+        </p>
+        {confirm ? (
+          <ScreeningConfirm
+            kind={confirm}
+            busy={busy}
+            onConfirm={onConfirm}
+            onCancel={onCancelConfirm}
+            className="mt-2"
+          />
         ) : null}
       </div>
 
@@ -216,11 +294,19 @@ export function InsightRail({
   onReject: (note: string) => void;
 }) {
   const [note, setNote] = useState('');
+  const [showOverride, setShowOverride] = useState(false);
   const { policy } = result;
   const effective: Decision = review?.decisionAfter ?? policy.decision;
   const trimmed = note.trim();
   const noteIsEnough = trimmed.length >= MIN_REJECT_NOTE;
   const needsHuman = effective === 'REVIEW' && review === null;
+  /**
+   * A PASS has nothing for a reviewer to decide: the engine already let the
+   * content through, and an empty note box beside two disabled-looking buttons
+   * reads as a step that was skipped. The override stays one click away, so the
+   * capability is unchanged — only the default surface is quieter.
+   */
+  const noHumanNeeded = effective === 'PASS' && review === null;
   const blockingChecks = policy.checks.filter((item) => item.outcome === 'block' || item.outcome === 'failed').length;
 
   return (
@@ -334,6 +420,15 @@ export function InsightRail({
             <p className="mt-1 text-[11px] leading-relaxed text-fg-3">
               Internal state only. Nothing outside TrustRoute was approved, executed or sent.
             </p>
+          </div>
+        ) : noHumanNeeded && !showOverride ? (
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+            <p className="text-[12px] leading-relaxed text-fg-2">
+              Nothing to decide: policy already passed this content, so no human is waiting on it.
+            </p>
+            <button type="button" className="btn btn-ghost btn-sm ml-auto" onClick={() => setShowOverride(true)}>
+              Override anyway
+            </button>
           </div>
         ) : (
           <div className="space-y-2">

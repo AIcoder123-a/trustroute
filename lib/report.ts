@@ -253,6 +253,12 @@ export function buildReport(result: AnalyzeResponse, review: ReviewEvent | null)
       result.policy.screening === 'unavailable'
         ? 'Screening was unavailable for at least one required detection. This report records an incomplete run, not a risk assessment.'
         : null,
+      // A blocked run can still carry a masked copy — Protect masks whatever it
+      // found before the decision is made. The export must not let that copy
+      // read as something that was, or may be, forwarded.
+      result.policy.decision === 'BLOCK'
+        ? 'Policy blocked this content. Any masked copy in this report is a sanitized preview for review only: it was not forwarded to an agent, and nothing was sent.'
+        : null,
       result.mode === 'mock'
         ? 'This report was produced in mock mode and must not be presented as evidence of Clocked API behaviour.'
         : 'Probabilities and categories were returned by the Clocked API for this exact input.',

@@ -61,7 +61,7 @@ export async function analyze(input: ValidAnalyzeInput): Promise<AnalyzeResponse
   }
   if (protect.status === 'ok' && protect.data && protect.data.entities.length > 0 && redaction.apiComparison === 'differs') {
     warnings.push(
-      "TrustRoute's masked copy differs from Clocked's anonymized_text. The UI shows both; the copy built here is the one that would be forwarded.",
+      "TrustRoute's masked copy differs from Clocked's anonymized_text. The UI shows both; the copy built here is the one the gateway forwards when the decision allows forwarding.",
     );
   }
 

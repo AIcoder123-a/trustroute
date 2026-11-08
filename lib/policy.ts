@@ -238,7 +238,8 @@ export function evaluatePolicy(input: PolicyInput): PolicyOutcome {
           entities.length === 1 ? 'entity' : 'entities'
         } (${Array.from(new Set(entities.map((entity) => entity.type))).join(
           ', ',
-        )}). None are high-sensitivity, so the masked copy can be forwarded without a human.`,
+        )}). None are high-sensitivity, so this finding does not require a human on its own — the decision is still the
+        gateway's to make.`,
         severity: 'info',
         source: 'protect',
       });
@@ -431,7 +432,9 @@ export function evaluatePolicy(input: PolicyInput): PolicyOutcome {
     headline = 'Do not forward this content. Blocked at the gateway.';
     actions.push('Quarantine the message and stop the agent run.');
     actions.push('Notify the content owner out of band — never through this channel.');
-    actions.push('Keep the hashed audit record; the original stays unscreened-for-forwarding.');
+    // BLOCK means nothing leaves, masked or not: `canForwardMasked` is false
+    // above, and this line must not read as a forwarding instruction.
+    actions.push('Keep the hashed audit record. Nothing is forwarded from this run, masked or otherwise.');
   } else if (degraded) {
     headline = 'Screening unavailable — manual review required.';
     actions.push('Do not treat this run as a risk verdict: at least one required detection returned no result.');

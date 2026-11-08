@@ -30,6 +30,8 @@ export function ReportDialog({
   }, [onClose]);
 
   const json = reportToJson(report);
+  const effective = report.review?.decisionAfter ?? report.decision.decision;
+  const blocked = effective === 'BLOCK';
 
   return (
     <div
@@ -157,13 +159,23 @@ export function ReportDialog({
                 ? 'No personal data was found, so nothing was masked.'
                 : `${report.protection.entitiesFound} finding(s) across ${report.protection.kinds.join(
                     ', ',
-                  )} were replaced before forwarding. ${
-                    report.protection.spansDropped
-                  } overlapping and ${report.protection.spansRejected} unusable span(s) were reconciled.`}
+                  )} were replaced ${
+                    blocked ? 'in the sanitized preview' : 'before forwarding'
+                  }. ${report.protection.spansDropped} overlapping and ${
+                    report.protection.spansRejected
+                  } unusable span(s) were reconciled.`}
             </p>
+            {blocked ? (
+              <p className="mt-1.5 text-[11.5px] leading-relaxed text-block">
+                Blocked at the gateway. This copy is a preview for the reviewer — it was not forwarded, and nothing was
+                sent.
+              </p>
+            ) : null}
             {report.protection.maskedText ? (
               <>
-                <div className="label mt-2.5 mb-1">Copy that would be forwarded</div>
+                <div className="label mt-2.5 mb-1">
+                  {blocked ? 'Sanitized preview (blocked — not forwarded)' : 'Copy that would be forwarded'}
+                </div>
                 <pre className="report-code mono scroll-thin max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-line bg-canvas px-3 py-2.5 text-[11.5px] leading-relaxed text-fg-2">
                   {report.protection.maskedText}
                 </pre>

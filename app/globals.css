@@ -246,13 +246,35 @@
   /* Touch, not mouse: a 32px control is fine to click and awkward to tap. */
   @media (max-width: 640px) {
     .btn-sm {
-      height: 36px;
+      height: 40px;
       padding: 0 12px;
       font-size: 12.5px;
     }
     .btn-lg {
       height: 44px;
     }
+  }
+
+  /*
+   * Skip link. Positioned off-screen rather than `display:none` so it stays in
+   * the tab order, and revealed on focus before anything else on the page.
+   */
+  .skip-link {
+    position: absolute;
+    top: -60px;
+    left: 8px;
+    z-index: 60;
+    padding: 8px 12px;
+    border: 1px solid var(--color-line-strong);
+    border-radius: 8px;
+    background-color: var(--color-surface);
+    color: var(--color-fg);
+    font-size: 12.5px;
+    font-weight: 600;
+    transition: top 120ms ease;
+  }
+  .skip-link:focus {
+    top: 8px;
   }
 
   .tag {
