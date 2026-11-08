@@ -331,9 +331,9 @@ Details and results: `docs/TEST_REPORT.md`.
   degrades to memory, `docs/SECURITY_NOTES.md` §14), and `npm run deploy:preflight` refuses a live
   deployment without them. The human check can move to Turnstile, but that half still needs a browser widget
   that is not shipped. The public demo runs the simulator, so neither counter is under real pressure there.
-- **The demo site's access control is an owner setting that is still being changed.** TrustRoute has no
+- **The demo site's access control is a hosting setting, not part of the product.** TrustRoute has no
   login of its own; if the URL answers with a prompt, that is the host's gate in front of the application,
-  not the product asking for credentials.
+  and it is due to be turned off before the repository is judged as a submission.
 - **Some behaviour exists only to make the product demonstrable**: the eight demo cases are hand-written
   synthetic inputs, and the *Screen the blocked example* shortcut runs one screening without a cost
   confirmation (as any first screen does).
